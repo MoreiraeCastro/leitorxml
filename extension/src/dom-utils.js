@@ -58,3 +58,13 @@ function setInputValue(input, value) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
+
+/**
+ * "Certificado conectado / empresa selecionada" — atualizado por todo content
+ * script sempre que carrega, independente de haver uma tarefa em andamento.
+ * O popup lê isto pra mostrar o status sem precisar abrir o Fisco Fácil pra ver.
+ */
+async function setConnectionStatus(patch) {
+  const { connectionStatus } = await chrome.storage.session.get("connectionStatus");
+  await chrome.storage.session.set({ connectionStatus: { ...connectionStatus, ...patch, updatedAt: Date.now() } });
+}

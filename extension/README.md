@@ -14,7 +14,7 @@ Manifest V3. Opera o Fisco Fácil (SEFAZ-RJ) no navegador do colaborador, autent
 - `src/content-home.js` — roda em `ssacert.fazenda.rj.gov.br`. Abre "AUTO Fisco Fácil", navega até a procuração certa.
 - `src/content-fisco.js` — roda em `fisco-facil.fazenda.rj.gov.br`. Detecta a página atual pelo `location.pathname` e executa a ação certa: lista de empresas, painel da empresa, formulário de extração, leitura da aba Solicitações.
 - `src/dom-utils.js` — helpers compartilhados (espera de AJAX via `#loading`, clique/matching por texto).
-- `popup/` — configuração de URL/token e disparo manual de "próxima tarefa".
+- `popup/` — configuração de URL/token, disparo manual de "próxima tarefa" e status "Certificado conectado / Empresa selecionada" (lido de `chrome.storage.session.connectionStatus`, atualizado por `content-home.js`/`content-fisco.js` a cada carregamento de página, independente de haver tarefa em andamento).
 
 ## O que está confirmado (HTML real + gravação de tela, 2026-09-29)
 

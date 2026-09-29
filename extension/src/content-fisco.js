@@ -54,6 +54,19 @@ async function handleListaContribuintes(run) {
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
 }
 
+/** Nome do titular do certificado + tipo de acesso, sempre visível na barra superior do Fisco Fácil (ex.: "PAULO ROBERTO SILVA CASTRO - Acesso por procuração"). */
+function readCertificateHolderName() {
+  const span = document.querySelector(".id-usu-txt");
+  if (!span) return null;
+  return span.textContent.replace(/\s*-\s*Acesso.*$/i, "").trim();
+}
+
+/** Empresa atualmente selecionada, se estivermos numa página com contexto de estabelecimento (mainAbasContribuinte, solicitacaoExtracaoDfe). */
+function readSelectedCompany() {
+  const nameEl = document.getElementById("frmDadosContrib:noRazao");
+  return { empresa: nameEl?.textContent.trim() ?? null, cnpj: readHeaderCnpj() };
+}
+
 // ---------- Página: mainAbasContribuinte.xhtml (painel da empresa) ----------
 function readHeaderCnpj() {
   const text = document.body.textContent;
@@ -157,6 +170,10 @@ async function fillAndSubmitExtractionForm(run) {
 
 // ---------- Orquestração ----------
 (async () => {
+  const certificado = readCertificateHolderName();
+  const { empresa, cnpj } = readSelectedCompany();
+  if (certificado || empresa || cnpj) await setConnectionStatus({ certificado, empresa, cnpj });
+
   const run = await getActiveRun();
   if (!run) return;
   if (run.accessContext?.type === "PROCURACAO" && !location.href.includes("fisco-facil")) return;

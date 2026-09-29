@@ -7,6 +7,12 @@ async function getActiveRun() {
   return response?.run ?? null;
 }
 
+/** Nome completo do titular do certificado, do painel "Minha conta" (existe no DOM mesmo antes de abrir o hover, só é revelado visualmente no hover). */
+function readCertificateHolderNameOnHome() {
+  const el = [...document.querySelectorAll("h6")].find((h) => h.className.includes("text-body"));
+  return el?.textContent.trim() ?? null;
+}
+
 function findAutoFiscoFacilCard() {
   const heading = findByExactText("h5", "AUTO Fisco Fácil");
   return heading?.closest("a.card") ?? null;
@@ -59,6 +65,9 @@ async function openProcuracao(grupo, posicao) {
 }
 
 (async () => {
+  const certificado = readCertificateHolderNameOnHome();
+  if (certificado) await setConnectionStatus({ certificado, empresa: null, cnpj: null });
+
   const run = await getActiveRun();
   if (!run || run.step !== "NAVIGATE_HOME") return;
 

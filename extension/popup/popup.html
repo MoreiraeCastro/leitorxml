@@ -11,10 +11,17 @@
     button { width: 100%; margin-top: 12px; padding: 8px; border: none; border-radius: 4px; background: #082240; color: #fff; font-size: 13px; cursor: pointer; }
     button.secondary { background: #eef1ef; color: #1a2129; }
     #status { margin-top: 12px; font-size: 12px; color: #5c6670; white-space: pre-wrap; }
+    #connectionStatus { margin-top: 4px; padding: 8px 10px; border-radius: 4px; background: #f4f6f5; font-size: 12px; line-height: 1.5; }
+    #connectionStatus .row { display: flex; justify-content: space-between; gap: 8px; }
+    #connectionStatus .label { color: #5c6670; }
+    #connectionStatus .value { font-weight: 600; text-align: right; }
+    #connectionStatus .empty { color: #9aa4ac; font-style: italic; }
   </style>
 </head>
 <body>
   <h1>Leitor de XML — Fisco Fácil</h1>
+
+  <div id="connectionStatus"></div>
 
   <label for="apiBaseUrl">URL do backend</label>
   <input id="apiBaseUrl" placeholder="http://localhost:3003/leitorxml" />
