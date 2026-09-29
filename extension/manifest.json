@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Leitor de XML — Fisco Fácil",
+  "version": "0.1.0",
+  "description": "Coleta em lote de NF-e/NFC-e do Fisco Fácil (SEFAZ-RJ) para o escritório Moreira & Castro.",
+  "permissions": ["storage", "downloads", "scripting"],
+  "host_permissions": [
+    "https://ssacert.fazenda.rj.gov.br/*",
+    "https://fisco-facil.fazenda.rj.gov.br/*",
+    "http://localhost:3003/*",
+    "https://portalmoreiraecastro.com.br/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ssacert.fazenda.rj.gov.br/*"],
+      "js": ["src/dom-utils.js", "src/content-home.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://fisco-facil.fazenda.rj.gov.br/*"],
+      "js": ["src/dom-utils.js", "src/content-fisco.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Leitor de XML"
+  }
+}

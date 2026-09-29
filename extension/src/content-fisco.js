@@ -1,0 +1,203 @@
+// Roda em fisco-facil.fazenda.rj.gov.br — as 3 páginas do fluxo real:
+// principalContribuintes.xhtml (lista de empresas da procuração),
+// mainAbasContribuinte.xhtml (painel da empresa) e
+// solicitacoes/solicitacaoExtracaoDfe.xhtml (formulário de extração).
+// Mapeado ao vivo (gravação de tela) em 2026-09-29 — ver _handoff/.
+
+const DOC_VALUE = { NFE: "1", NFCE: "2" };
+const PARTICIPANTE_LABEL = { EMITENTE: "Emitente", DESTINATARIO: "Destinatário" };
+
+async function getActiveRun() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
+  return response?.run ?? null;
+}
+async function setRunFlag(patch) {
+  const run = await getActiveRun();
+  if (!run) return null;
+  const next = { ...run, ...patch };
+  await chrome.storage.session.set({ activeRun: next });
+  return next;
+}
+async function reportStatus(status, extra = {}) {
+  await chrome.runtime.sendMessage({ type: "REPORT_STATUS", status, ...extra });
+}
+async function reportFailure(motivo) {
+  await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo });
+}
+
+function formatCnpjMask(cnpj) {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+}
+
+/** Formata como visto na tela após escolher "Meses" (ex.: "08/2026"). Ponto a validar na PoC — pode ser que o servidor espere outro formato. */
+function formatCompetencia(ano, mes) {
+  return `${String(mes).padStart(2, "0")}/${ano}`;
+}
+
+// ---------- Página: principalContribuintes.xhtml (lista de empresas) ----------
+async function handleListaContribuintes(run) {
+  const searchInput = document.getElementById("FrmFisco:valorDaPesquisa_input") ?? document.getElementById("FrmFisco:valorDaPesquisa");
+  if (!searchInput) throw new Error("CAMPO_BUSCA_CNPJ_NAO_ENCONTRADO");
+  setInputValue(searchInput, formatCnpjMask(run.establishment.cnpj));
+
+  const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
+  realClick(filtrarButton);
+  await waitForAjaxIdle();
+
+  const body = document.getElementById("FrmFisco:ListaContribuintes_data");
+  const emptyRow = body?.querySelector(".ui-datatable-empty-message");
+  if (emptyRow) throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj}`);
+
+  const row = body?.querySelector("tr");
+  if (!row) throw new Error("LINHA_DA_EMPRESA_NAO_ENCONTRADA");
+  realClick(row);
+  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
+}
+
+// ---------- Página: mainAbasContribuinte.xhtml (painel da empresa) ----------
+function readHeaderCnpj() {
+  const text = document.body.textContent;
+  const match = text.match(/Num\.\s*CNPJ:\s*([\d./-]+)/);
+  return match?.[1]?.replace(/\D/g, "") ?? null;
+}
+
+async function openExtractionForm() {
+  const link = document.getElementById("frmMenuLateral:fieldExtracaoID") ?? findByExactText("a", "Extração de documentos fiscais");
+  realClick(link);
+  await waitFor(() => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe"), { timeoutMs: 15000 });
+}
+
+async function openSolicitacoesTab() {
+  const tabLink = findByExactText("a", "Solicitações");
+  realClick(tabLink);
+  await waitForAjaxIdle();
+  await waitFor(() => document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data"), { timeoutMs: 10000 });
+}
+
+function classifySituacao(text) {
+  const normalized = text.trim().toLowerCase();
+  if (normalized.includes("aguardando")) return "PROCESSANDO_SEFAZ";
+  if (normalized.includes("expirad")) return "EXPIRADA";
+  if (normalized.includes("sem resultado")) return "SEM_DOCUMENTOS";
+  if (normalized.includes("erro")) return "FALHA";
+  return "PRONTO_PARA_BAIXAR"; // "Processada"/"Processada com resultado" ou variação não mapeada — assume pronto.
+}
+
+async function readLatestSolicitacaoAndAct(run) {
+  const body = document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data");
+  const row = body?.querySelector('tr[data-ri="0"]') ?? body?.querySelector("tr");
+  if (!row) throw new Error("NENHUMA_SOLICITACAO_ENCONTRADA");
+  const cells = row.querySelectorAll("td");
+  const referencia = cells[2]?.textContent.trim() ?? "";
+  const expectedDocLabel = run.tipoDocumento === "NFCE" ? "NFC-e" : "NF-e";
+  const expectedParticipanteLabel = PARTICIPANTE_LABEL[run.papel];
+  if (!referencia.includes(expectedDocLabel) || !referencia.includes(expectedParticipanteLabel)) {
+    throw new Error(`REFERENCIA_NAO_BATE_COM_A_TAREFA: esperado "${expectedDocLabel} - ${expectedParticipanteLabel}", encontrado "${referencia}"`);
+  }
+  const situacaoLink = cells[3]?.querySelector("a");
+  const situacaoTexto = situacaoLink?.textContent.trim() ?? cells[3]?.textContent.trim() ?? "";
+  const status = classifySituacao(situacaoTexto);
+
+  if (status === "PRONTO_PARA_BAIXAR") {
+    await chrome.runtime.sendMessage({ type: "EXPECT_DOWNLOAD" });
+    if (situacaoLink) realClick(situacaoLink);
+    // dá um tempo pro download disparar e o background capturar; se em vez disso
+    // abrir um modal (nosso mapeamento de texto errou), lê o modal e reclassifica.
+    const dialog = await waitFor(() => {
+      const el = [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetParent && d.textContent.includes("Solicitação de Extração"));
+      return el ?? null;
+    }, { timeoutMs: 4000 }).catch(() => null);
+    if (dialog) {
+      const realStatus = classifySituacao(dialog.textContent);
+      const fechar = findByExactText("button", "Fechar", dialog) ?? dialog.querySelector("button");
+      if (fechar) realClick(fechar);
+      await reportStatus(realStatus === "PRONTO_PARA_BAIXAR" ? "AGUARDANDO_INTERVENCAO" : realStatus, { sefazReferencia: referencia });
+      return;
+    }
+    // sem modal: assume que o download disparou; o background cuida do upload e finaliza a tarefa sozinho.
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    return;
+  }
+
+  await reportStatus(status, { sefazReferencia: referencia });
+}
+
+// ---------- Página: solicitacaoExtracaoDfe.xhtml (formulário) ----------
+async function selectParticipante(label) {
+  const target = findByExactText("label", label);
+  if (!target) throw new Error(`OPCAO_PARTICIPANTE_NAO_ENCONTRADA: ${label}`);
+  const radio = target.closest("td")?.querySelector('input[type="radio"]') ?? document.getElementById(target.getAttribute("for"));
+  realClick(radio ?? target);
+}
+
+async function fillAndSubmitExtractionForm(run) {
+  const mesesRadio = document.getElementById("FrmSolicitarExtracaoDfe:tpPesquisaDM:1");
+  if (!mesesRadio.checked) {
+    realClick(mesesRadio);
+    await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000 });
+  }
+  // Fecha o calendário popup que abre ao marcar "Meses", e seta o valor direto —
+  // não navega o datepicker por clique. Formato a confirmar na PoC (ver formatCompetencia).
+  document.body.click();
+  const competencia = formatCompetencia(run.competenciaAno, run.competenciaMes);
+  setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), competencia);
+  setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtFimDia_input"), competencia);
+
+  const docRadio = document.querySelector(`input[name="FrmSolicitarExtracaoDfe:tpDocumento"][value="${DOC_VALUE[run.tipoDocumento]}"]`);
+  if (!docRadio) throw new Error(`OPCAO_DOCUMENTO_NAO_ENCONTRADA: ${run.tipoDocumento}`);
+  realClick(docRadio);
+  await waitForAjaxIdle(); // popula PARTICIPA DO DOCUMENTO COMO via AJAX
+
+  await selectParticipante(PARTICIPANTE_LABEL[run.papel]);
+
+  const confirmar = document.getElementById("FrmSolicitarExtracaoDfe:submitPesquisa");
+  realClick(confirmar);
+  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
+}
+
+// ---------- Orquestração ----------
+(async () => {
+  const run = await getActiveRun();
+  if (!run) return;
+  if (run.accessContext?.type === "PROCURACAO" && !location.href.includes("fisco-facil")) return;
+
+  try {
+    if (location.pathname.includes("principalContribuintes")) {
+      await handleListaContribuintes(run);
+      return; // navegação leva pra mainAbasContribuinte; script reinjeta lá.
+    }
+
+    if (location.pathname.includes("solicitacaoExtracaoDfe")) {
+      await fillAndSubmitExtractionForm(run);
+      await setRunFlag({ formSubmitted: true });
+      await reportStatus("SOLICITADO");
+      return; // navegação de volta pra mainAbasContribuinte.
+    }
+
+    if (location.pathname.includes("mainAbasContribuinte")) {
+      const cnpjNaTela = readHeaderCnpj();
+      if (cnpjNaTela && cnpjNaTela !== run.establishment.cnpj) {
+        await reportFailure(`CNPJ na tela (${cnpjNaTela}) não bate com o esperado (${run.establishment.cnpj}) — parando por segurança.`);
+        return;
+      }
+      if (!run.formSubmitted) {
+        await openExtractionForm();
+        return; // navegação pro formulário.
+      }
+      await openSolicitacoesTab();
+      await readLatestSolicitacaoAndAct(run);
+      return;
+    }
+  } catch (error) {
+    await reportFailure(error.message);
+  }
+})();
+
+// Permite o background "cutucar" o content script já carregado (ex.: quando a
+// próxima tarefa é da mesma empresa e não houve navegação de página).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "RUN_STEP") {
+    location.reload();
+    sendResponse({ ok: true });
+  }
+});
