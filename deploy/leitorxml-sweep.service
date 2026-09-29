@@ -8,4 +8,4 @@ Type=oneshot
 # environment (.env.local INTERNAL_LEITORXML_SECRET). Keep this file
 # root-readable only (chmod 600) since it carries that secret in plain text.
 # Ajuste a porta (3003) para a que o app leitorxml estiver de fato ouvindo.
-ExecStart=/usr/bin/curl -fsS -X POST -H "x-internal-secret: REPLACE_WITH_REAL_SECRET" http://127.0.0.1:3003/api/internal/leitorxml-sweep
+ExecStart=/usr/bin/curl -fsS -X POST -H "x-internal-secret: REPLACE_WITH_REAL_SECRET" http://127.0.0.1:3003/leitorxml/api/internal/leitorxml-sweep
