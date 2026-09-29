@@ -6,6 +6,7 @@ const NAV = [
   { href: "/painel", label: "Painel mensal" },
   { href: "/estabelecimentos", label: "Estabelecimentos" },
   { href: "/extracao/nova", label: "Nova extração" },
+  { href: "/extensao", label: "Extensão" },
 ];
 
 export function Shell({ session, children }: { session: OfficeSession; children: React.ReactNode }) {
