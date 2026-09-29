@@ -1,0 +1,10 @@
+[Unit]
+Description=Run leitorxml-sweep.service every 3 days
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=3d
+Unit=leitorxml-sweep.service
+
+[Install]
+WantedBy=timers.target
