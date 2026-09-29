@@ -7,9 +7,17 @@ async function getActiveRun() {
   return response?.run ?? null;
 }
 
-/** Nome completo do titular do certificado, do painel "Minha conta" (existe no DOM mesmo antes de abrir o hover, só é revelado visualmente no hover). */
-function readCertificateHolderNameOnHome() {
-  const el = [...document.querySelectorAll("h6")].find((h) => h.className.includes("text-body"));
+/**
+ * Nome completo do titular do certificado, do painel "Minha conta"
+ * (h6.text-body dentro de .area-user-login — confirmado via HTML real).
+ * O painel é hidratado por um componente Angular depois do carregamento
+ * inicial da página, então precisa esperar em vez de ler uma vez só.
+ */
+async function readCertificateHolderNameOnHome() {
+  const el = await waitFor(
+    () => [...document.querySelectorAll("h6")].find((h) => h.className.includes("text-body")) ?? null,
+    { timeoutMs: 5000 },
+  ).catch(() => null);
   return el?.textContent.trim() ?? null;
 }
 
@@ -65,7 +73,7 @@ async function openProcuracao(grupo, posicao) {
 }
 
 (async () => {
-  const certificado = readCertificateHolderNameOnHome();
+  const certificado = await readCertificateHolderNameOnHome();
   if (certificado) await setConnectionStatus({ certificado, empresa: null, cnpj: null });
 
   const run = await getActiveRun();
