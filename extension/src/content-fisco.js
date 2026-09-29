@@ -54,11 +54,18 @@ async function handleListaContribuintes(run) {
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
 }
 
-/** Nome do titular do certificado + tipo de acesso, sempre visível na barra superior do Fisco Fácil (ex.: "PAULO ROBERTO SILVA CASTRO - Acesso por procuração"). */
+/**
+ * Nome do titular do certificado, sempre visível na barra superior do Fisco
+ * Fácil. Lê do atributo `title` (ex.: "PAULO ROBERTO SILVA CASTRO (CPF:
+ * 10822759721) - Acesso por procuração"), não do `textContent` — o span
+ * `.id-usu-txt` real tem um `<form>` de menu inteiro aninhado dentro dele,
+ * então `textContent` viria com esse lixo junto (confirmado via HTML real).
+ */
 function readCertificateHolderName() {
   const span = document.querySelector(".id-usu-txt");
-  if (!span) return null;
-  return span.textContent.replace(/\s*-\s*Acesso.*$/i, "").trim();
+  const title = span?.getAttribute("title");
+  if (!title) return null;
+  return title.split(/\s*\(CPF:|\s+-\s+Acesso/i)[0].trim();
 }
 
 /** Empresa atualmente selecionada, se estivermos numa página com contexto de estabelecimento (mainAbasContribuinte, solicitacaoExtracaoDfe). */
