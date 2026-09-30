@@ -15,12 +15,23 @@ function renderConnectionStatus(connectionStatus) {
   `;
 }
 
+function describeRun(run) {
+  if (!run) return null;
+  if (run.mode === "SWEEP") {
+    const total = run.sweepQueue?.length;
+    const posicao = (run.sweepCursor ?? 0) + 1;
+    return total ? `Varredura em andamento: procuração ${posicao}/${total}` : "Varredura em andamento: abrindo modal de procurações...";
+  }
+  return `Em andamento: ${run.establishment?.razaoSocial ?? "?"} — ${run.tipoDocumento}/${run.papel}`;
+}
+
 async function load() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   urlInput.value = apiBaseUrl ?? "http://localhost:3003/leitorxml";
   tokenInput.value = apiToken ?? "";
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
-  statusEl.textContent = run ? `Em andamento: ${run.establishment?.razaoSocial ?? "?"} — ${run.tipoDocumento}/${run.papel}` : "Nenhuma tarefa em andamento.";
+  const { lastSweepError } = await chrome.storage.session.get("lastSweepError");
+  statusEl.textContent = describeRun(run) ?? (lastSweepError ? `Última varredura falhou: ${lastSweepError}` : "Nenhuma tarefa em andamento.");
   const { connectionStatus } = await chrome.storage.session.get("connectionStatus");
   renderConnectionStatus(connectionStatus);
 }
@@ -28,6 +39,12 @@ async function load() {
 document.getElementById("save").addEventListener("click", async () => {
   await chrome.storage.local.set({ apiBaseUrl: urlInput.value.trim(), apiToken: tokenInput.value.trim() });
   statusEl.textContent = "Salvo.";
+});
+
+document.getElementById("startSweep").addEventListener("click", async () => {
+  statusEl.textContent = "Iniciando varredura...";
+  const response = await chrome.runtime.sendMessage({ type: "START_SWEEP" });
+  statusEl.textContent = response.ok ? describeRun(response.run) : `Erro: ${response.error}`;
 });
 
 document.getElementById("startNext").addEventListener("click", async () => {

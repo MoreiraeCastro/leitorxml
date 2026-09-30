@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { acquireEstablishmentLock, isEligibleForMonthlyRun, releaseEstablishmentLock, resolveAccessContext } from "./establishments";
+import { upsertProcurationIndex } from "./procuration-index";
 import { XML_COLLECTION_DOCUMENT_COMBINATIONS } from "./types";
 
 /** Competência fechada mais recente: se hoje é setembro, o mês fechado é agosto. */
@@ -58,6 +59,55 @@ export async function createTasksForEstablishments(db: SupabaseClient, input: { 
   const rows = buildTaskRows(establishments ?? [], input);
   const eligibleCount = new Set(rows.map((row) => row.establishment_id)).size;
   return { establishments: eligibleCount, tasksCreated: await insertTaskRows(db, rows), skipped: input.establishmentIds.length - eligibleCount };
+}
+
+export type DiscoveredEstablishment = {
+  cnpj: string;
+  razaoSocial: string;
+  inscricaoEstadual: string | null;
+  situacaoCadastral: string;
+  procuracaoGrupo: string;
+  posicao: number;
+};
+
+/**
+ * Uma empresa encontrada pela extensão durante a varredura de uma procuração
+ * — cadastra/atualiza o estabelecimento, cacheia (grupo, posição, CNPJ) no
+ * índice, e cria as tarefas do mês corrente se não for "Baixada". A extensão
+ * é quem descobre a carteira agora, não um cadastro manual prévio no Portal.
+ */
+export async function registerDiscoveredEstablishment(db: SupabaseClient, input: DiscoveredEstablishment) {
+  const { data: establishment, error } = await db
+    .from("xml_watch_establishments")
+    .upsert(
+      {
+        cnpj: input.cnpj,
+        razao_social: input.razaoSocial,
+        inscricao_estadual: input.inscricaoEstadual,
+        situacao_cadastral: input.situacaoCadastral,
+        certificado_tipo: "ESCRITORIO_PROCURACAO",
+        procuracao_grupo: input.procuracaoGrupo,
+        procuracao_posicao: input.posicao,
+        ativo: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "cnpj" },
+    )
+    .select("id")
+    .single();
+  if (error || !establishment) throw new Error("ESTABLISHMENT_UPSERT_FAILED");
+
+  await upsertProcurationIndex(db, [
+    { procuracaoGrupo: input.procuracaoGrupo, posicao: input.posicao, cnpj: input.cnpj, situacaoCadastral: input.situacaoCadastral },
+  ]);
+
+  if (!isEligibleForMonthlyRun({ ativo: true, situacaoCadastral: input.situacaoCadastral })) {
+    return { establishmentId: establishment.id as string, tasksCreated: 0 };
+  }
+
+  const competencia = previousClosedCompetencia();
+  const { tasksCreated } = await createTasksForEstablishments(db, { establishmentIds: [establishment.id as string], ...competencia });
+  return { establishmentId: establishment.id as string, tasksCreated };
 }
 
 /** Escalona para revisão manual quem ficou parado em PROCESSANDO_SEFAZ por mais de 24h sem atualização — a "previsão de conclusão" da SEFAZ não é um sinal confiável (§4 da Descoberta). */

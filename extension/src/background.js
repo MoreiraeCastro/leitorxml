@@ -78,6 +78,22 @@ async function claimNextTaskAndPrepare() {
   return run;
 }
 
+/**
+ * Varredura completa: entra em CADA procuração do modal, lê todas as páginas
+ * da lista de empresas, e cadastra/cria tarefa pra cada uma que não for
+ * "Baixada" — sem depender de estabelecimentos pré-cadastrados no Portal.
+ * Fase separada da execução (REQUEST_NEXT_TASK continua sendo quem processa
+ * as tarefas já criadas, uma de cada vez).
+ */
+async function startSweep() {
+  const run = { mode: "SWEEP", step: "NAVIGATE_HOME" };
+  await setActiveRun(run);
+  const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
+  if (tab) await chrome.tabs.update(tab.id, { active: true, url: HOME_URL });
+  else await chrome.tabs.create({ url: HOME_URL });
+  return run;
+}
+
 async function reportEvento(taskId, body) {
   await apiFetch(`/api/leitorxml/extensao/tarefas/${taskId}/eventos`, {
     method: "POST",
@@ -205,6 +221,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor } });
           const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
           if (tab) await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => history.back() });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "START_SWEEP": {
+          const run = await startSweep();
+          sendResponse({ ok: true, run });
+          break;
+        }
+        case "SET_SWEEP_QUEUE": {
+          // content-home.js enumerou TODAS as procurações do modal (todos os grupos) — guarda a fila e o cursor.
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          await setActiveRun({ ...run, sweepQueue: message.queue, sweepCursor: 0 });
+          sendResponse({ ok: true, queue: message.queue });
+          break;
+        }
+        case "REGISTER_ESTABLISHMENT": {
+          // Uma linha não-Baixada foi lida da lista — cadastra/atualiza e cria as tarefas do mês, sem bloquear a varredura por muito tempo.
+          const response = await apiFetch("/api/leitorxml/extensao/estabelecimentos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cnpj: message.cnpj,
+              razaoSocial: message.razaoSocial,
+              inscricaoEstadual: message.inscricaoEstadual,
+              situacaoCadastral: message.situacaoCadastral,
+              procuracaoGrupo: message.procuracaoGrupo,
+              posicao: message.posicao,
+            }),
+          });
+          sendResponse({ ok: true, result: await response.json() });
+          break;
+        }
+        case "SWEEP_NEXT_POSITION": {
+          // Esgotou as páginas da procuração atual — avança o cursor e volta pro histórico pra testar a próxima.
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          const nextCursor = (run.sweepCursor ?? 0) + 1;
+          if (nextCursor >= run.sweepQueue.length) {
+            await clearActiveRun();
+            sendResponse({ ok: true, done: true });
+            break;
+          }
+          await setActiveRun({ ...run, sweepCursor: nextCursor });
+          const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
+          if (tab) await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => history.back() });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "REPORT_SWEEP_FAILURE": {
+          await chrome.storage.session.set({ lastSweepError: message.motivo });
+          await clearActiveRun();
+          sendResponse({ ok: true });
+          break;
+        }
+        case "SWEEP_DONE": {
+          await chrome.storage.session.remove("lastSweepError");
+          await clearActiveRun();
           sendResponse({ ok: true });
           break;
         }

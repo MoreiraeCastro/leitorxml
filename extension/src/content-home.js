@@ -93,6 +93,29 @@ async function clickProcuracaoPosition(grupo, posicao) {
   const run = await getActiveRun();
   if (!run || run.step !== "NAVIGATE_HOME") return;
 
+  if (run.mode === "SWEEP") {
+    // Varredura completa: testa CADA procuração do modal (todos os grupos), sem alvo de CNPJ específico.
+    try {
+      let queue = run.sweepQueue;
+      if (!queue) {
+        queue = await listProcuracaoPositions();
+        if (!queue.length) throw new Error("NENHUMA_PROCURACAO_ENCONTRADA_NO_MODAL");
+        const response = await chrome.runtime.sendMessage({ type: "SET_SWEEP_QUEUE", queue });
+        queue = response.queue;
+      }
+      const cursor = run.sweepCursor ?? 0;
+      if (cursor >= queue.length) {
+        await chrome.runtime.sendMessage({ type: "SWEEP_DONE" });
+        return;
+      }
+      const current = queue[cursor];
+      await clickProcuracaoPosition(current.grupo, current.posicao);
+    } catch (error) {
+      await chrome.runtime.sendMessage({ type: "REPORT_SWEEP_FAILURE", motivo: error.message });
+    }
+    return;
+  }
+
   if (run.accessContext.type !== "PROCURACAO") {
     // Certificado próprio: exigiria trocar o certificado ativo no navegador,
     // algo que só o usuário pode fazer (seletor nativo do SO). Não implementado

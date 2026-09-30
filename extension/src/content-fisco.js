@@ -35,6 +35,51 @@ function formatCompetencia(ano, mes) {
 }
 
 // ---------- Página: principalContribuintes.xhtml (lista de empresas) ----------
+
+/** Lê CNPJ/IE/Razão/Situação de todas as linhas visíveis na página atual da tabela (sem busca — é a lista completa da procuração). */
+function readContribuinteRows() {
+  const body = document.getElementById("FrmFisco:ListaContribuintes_data");
+  const rows = [...(body?.querySelectorAll("tr") ?? [])];
+  return rows
+    .map((tr) => {
+      const cells = tr.querySelectorAll("td");
+      return {
+        cnpj: cells[1]?.textContent.trim().replace(/\D/g, "") ?? "",
+        inscricaoEstadual: cells[2]?.textContent.trim() || null,
+        razaoSocial: cells[3]?.textContent.trim() ?? "",
+        situacaoCadastral: cells[6]?.textContent.trim() ?? "",
+      };
+    })
+    .filter((row) => row.cnpj.length === 14);
+}
+
+/**
+ * Varredura completa de uma procuração: lê a página atual inteira (cadastra
+ * cada linha não-Baixada via REGISTER_ESTABLISHMENT), pagina pra frente
+ * enquanto houver "Próxima página", e ao esgotar avisa o background pra
+ * seguir pra próxima procuração da fila.
+ */
+async function sweepCurrentPage(run) {
+  const current = run.sweepQueue[run.sweepCursor];
+  for (const row of readContribuinteRows()) {
+    if (row.situacaoCadastral === "Baixada") continue;
+    await chrome.runtime.sendMessage({ type: "REGISTER_ESTABLISHMENT", ...row, procuracaoGrupo: current.grupo, posicao: current.posicao });
+  }
+
+  const nextPageLink = document.querySelector(".ui-paginator-next");
+  if (nextPageLink && !nextPageLink.classList.contains("ui-state-disabled")) {
+    realClick(nextPageLink);
+    await waitForAjaxIdle({ label: "AJAX da próxima página da lista de empresas" });
+    // A tabela é recriada via AJAX a cada página — mesma cautela do clique de linha (ver realClick em dom-utils.js).
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await sweepCurrentPage(run);
+    return;
+  }
+
+  // Esgotou todas as páginas dessa procuração.
+  await chrome.runtime.sendMessage({ type: "SWEEP_NEXT_POSITION" });
+}
+
 async function handleListaContribuintes(run) {
   const searchInput = document.getElementById("FrmFisco:valorDaPesquisa_input") ?? document.getElementById("FrmFisco:valorDaPesquisa");
   if (!searchInput) throw new Error("CAMPO_BUSCA_CNPJ_NAO_ENCONTRADO");
@@ -63,6 +108,11 @@ async function handleListaContribuintes(run) {
     const current = run.discovery.queue[run.discovery.cursor];
     await chrome.runtime.sendMessage({ type: "DISCOVERY_FOUND", grupo: current.grupo, posicao: current.posicao });
   }
+  // A tabela é recriada via AJAX após a busca — o PrimeFaces religa os
+  // listeners de seleção de linha na tabela nova um instante depois do
+  // #loading sumir, não no mesmo tick. Clicar cedo demais não faz nada
+  // (sem erro, sem navegação) — daí o "fica parado" sem nunca reportar falha.
+  await new Promise((resolve) => setTimeout(resolve, 500));
   realClick(row);
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
 }
@@ -201,6 +251,19 @@ async function fillAndSubmitExtractionForm(run) {
 
   const run = await getActiveRun();
   if (!run) return;
+
+  if (run.mode === "SWEEP") {
+    // Varredura completa: só age na lista de empresas — não passa pelo formulário/acompanhamento (isso é trabalho da Fase 2, "Buscar próxima tarefa").
+    if (location.pathname.includes("principalContribuintes")) {
+      try {
+        await sweepCurrentPage(run);
+      } catch (error) {
+        await chrome.runtime.sendMessage({ type: "REPORT_SWEEP_FAILURE", motivo: error.message });
+      }
+    }
+    return;
+  }
+
   if (run.accessContext?.type === "PROCURACAO" && !location.href.includes("fisco-facil")) return;
 
   try {
