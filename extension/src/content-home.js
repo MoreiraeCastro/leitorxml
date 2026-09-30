@@ -26,27 +26,31 @@ function findAutoFiscoFacilCard() {
   return heading?.closest("a.card") ?? null;
 }
 
+const CHAMA_APLICACAO_RE =
+  /chamaAplicacao\(\s*'([^']*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\s*,\s*(\d+)\s*,\s*(true|false)\s*\)/;
+
 /**
- * Varre #conteudoModalAutorizacoes em ordem de documento, agrupando os links
- * "Acesso por procuração" pelo cabeçalho de grupo mais recente visto antes
- * deles (ex.: "SUBFIN"). Heurístico — o HTML real do modal (conteúdo injetado
- * via AJAX) ainda não foi capturado; ajustar aqui se a estrutura divergir.
+ * Varre #conteudoModalAutorizacoes por grupo (`h6.fw-bold`, ex.: "SUBFIN") e
+ * link de acesso (`span[onclick*="chamaAplicacao"]`) — confirmado via HTML
+ * real capturado ao vivo em 2026-09-30. Usa o `perfil` (2º argumento
+ * numérico de `chamaAplicacao(url, sistema, perfil, orgao, classe, ds,
+ * origem, fullScreen)`) como identificador de posição — é o ID real e
+ * estável que o servidor usa, não uma contagem de ordem no DOM (frágil,
+ * usada antes; abandonada por causar entradas inconsistentes entre
+ * reaberturas do modal).
  */
 function collectProcuracaoLinks(container) {
   const items = [];
   let currentGroup = null;
-  let indexInGroup = 0;
-  for (const el of container.querySelectorAll("*")) {
-    const text = el.children.length === 0 ? el.textContent.trim() : "";
-    if (!text) continue;
-    if (text.toLowerCase().includes("acesso por procuração")) {
-      indexInGroup += 1;
-      items.push({ grupo: currentGroup, posicao: indexInGroup, element: el.closest("a,button") ?? el });
-    } else if (text.length < 60) {
-      // texto curto que não é o link em si — candidato a cabeçalho de grupo (ex.: "SUBFIN").
-      currentGroup = text;
-      indexInGroup = 0;
+  for (const el of container.querySelectorAll("h6.fw-bold, span[onclick*='chamaAplicacao']")) {
+    if (el.matches("h6.fw-bold")) {
+      currentGroup = el.textContent.trim();
+      continue;
     }
+    const match = CHAMA_APLICACAO_RE.exec(el.getAttribute("onclick") ?? "");
+    if (!match) continue;
+    const [, url, sistema, perfil, orgao, classe, ds, origem] = match;
+    items.push({ grupo: currentGroup, posicao: Number(perfil), args: { url, sistema, perfil, orgao, classe, ds, origem } });
   }
   return items;
 }
@@ -69,21 +73,30 @@ async function openAutoFiscoFacilModal() {
   return container;
 }
 
-/** Todas as posições de procuração visíveis no modal agora, sem os refs de elemento (não são serializáveis pra mandar pro background). */
+/** Todas as posições de procuração visíveis no modal agora. */
 async function listProcuracaoPositions() {
   const container = await openAutoFiscoFacilModal();
-  return collectProcuracaoLinks(container).map(({ grupo, posicao }) => ({ grupo, posicao }));
+  return collectProcuracaoLinks(container);
 }
 
-async function clickProcuracaoPosition(grupo, posicao) {
+/**
+ * Entra numa procuração chamando `chamaAplicacao(...)` diretamente no mundo
+ * principal da página (via background, que tem `chrome.scripting` com
+ * `world: "MAIN"`) — não depende de clique sintético disparar o onclick do
+ * `<span>` corretamente, o que se mostrou inconsistente ao vivo (a 2ª
+ * procuração em diante às vezes não navegava, sem erro nenhum). A própria
+ * `chamaAplicacao` do site tem um bug conhecido (`janela is not defined`)
+ * que dispara DEPOIS do `form.submit()` que realmente importa — inofensivo.
+ */
+async function enterProcuracao(grupo, posicao) {
   const container = await openAutoFiscoFacilModal();
   const links = collectProcuracaoLinks(container);
   const match = links.find((item) => item.grupo === grupo && item.posicao === posicao);
   if (!match) {
     throw new Error(`PROCURACAO_NAO_ENCONTRADA: grupo=${grupo} posicao=${posicao} (encontrados: ${links.length})`);
   }
-  realClick(match.element);
-  // Clicar navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí.
+  await chrome.runtime.sendMessage({ type: "INVOKE_CHAMA_APLICACAO", args: match.args });
+  // Navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí.
 }
 
 (async () => {
@@ -109,7 +122,7 @@ async function clickProcuracaoPosition(grupo, posicao) {
         return;
       }
       const current = queue[cursor];
-      await clickProcuracaoPosition(current.grupo, current.posicao);
+      await enterProcuracao(current.grupo, current.posicao);
     } catch (error) {
       await chrome.runtime.sendMessage({ type: "REPORT_SWEEP_FAILURE", motivo: error.message });
     }
@@ -127,7 +140,7 @@ async function clickProcuracaoPosition(grupo, posicao) {
   try {
     if (run.accessContext.posicao != null) {
       // Posição já conhecida (índice ou cadastro manual) — vai direto, sem descoberta.
-      await clickProcuracaoPosition(run.accessContext.grupo, run.accessContext.posicao);
+      await enterProcuracao(run.accessContext.grupo, run.accessContext.posicao);
       return;
     }
 
@@ -145,7 +158,7 @@ async function clickProcuracaoPosition(grupo, posicao) {
       throw new Error("CNPJ_NAO_ENCONTRADO_EM_NENHUMA_PROCURACAO_TESTADA");
     }
     const current = discovery.queue[discovery.cursor];
-    await clickProcuracaoPosition(current.grupo, current.posicao);
+    await enterProcuracao(current.grupo, current.posicao);
   } catch (error) {
     await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: error.message });
   }

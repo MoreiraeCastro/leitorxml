@@ -208,6 +208,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "INVOKE_CHAMA_APLICACAO": {
+          // Chama chamaAplicacao(...) direto no mundo principal da página (não dá pra
+          // acessar funções globais do site a partir do mundo isolado do content
+          // script) — bypassa clique sintético, que se mostrou inconsistente ao vivo
+          // pra entrar na 2ª procuração em diante.
+          const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*", active: true });
+          if (!tab) return sendResponse({ ok: false, error: "ABA_SSACERT_NAO_ENCONTRADA" });
+          const { url, sistema, perfil, orgao, classe, ds, origem } = message.args;
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: "MAIN",
+            func: (u, s, p, o, c, d, or) => {
+              try {
+                window.chamaAplicacao(u, Number(s), Number(p), Number(o), Number(c), d, Number(or), false);
+              } catch {
+                // chamaAplicacao do site tem um bug conhecido (janela is not defined) que
+                // dispara DEPOIS do form.submit() que realmente importa — inofensivo.
+              }
+            },
+            args: [url, sistema, perfil, orgao, classe, ds, origem],
+          });
+          sendResponse({ ok: true });
+          break;
+        }
         case "SET_DISCOVERY_QUEUE": {
           // content-home.js enumerou as posições do modal — guarda a fila e o cursor no activeRun.
           const run = await getActiveRun();
