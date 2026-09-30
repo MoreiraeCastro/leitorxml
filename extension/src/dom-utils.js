@@ -68,14 +68,14 @@ function realClick(el) {
 }
 
 /**
- * Clique que deve resultar em NAVEGAÇÃO real de página (não só AJAX) — usa
- * chrome.debugger via background (mensagem REAL_CLICK), não dispatchEvent.
- * Confirmado ao vivo (2026-09-30): cliques que só disparam AJAX no lugar
- * (ex.: botão "Filtrar") funcionam bem com `realClick()` normal, mas cliques
- * que dependem de `form.submit()`/redirect pra trocar de página (entrar numa
- * empresa, entrar numa procuração) falham silenciosamente com clique
- * sintético a partir da 2ª tentativa em diante — só um clique com "ativação
- * de usuário" real (humano, ou via CDP) navega de forma confiável.
+ * Clique de verdade (via chrome.debugger/CDP, mensagem REAL_CLICK ao
+ * background), não `dispatchEvent()`. Confirmado ao vivo (2026-09-30) que o
+ * Fisco Fácil precisa disso pra praticamente qualquer interação que dispare
+ * AJAX/navegação no servidor — clique sintético falha silenciosamente (sem
+ * erro, sem efeito) de forma inconsistente: às vezes na 1ª tentativa funciona,
+ * na 2ª em diante não. Usada em todo clique de `content-fisco.js`, exceto o
+ * card "AUTO Fisco Fácil" em `content-home.js` (esse, `realClick()` normal
+ * sempre funcionou em todos os testes).
  */
 async function realNavigationClick(el) {
   el.scrollIntoView({ block: "center" });

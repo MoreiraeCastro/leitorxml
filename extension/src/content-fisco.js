@@ -64,7 +64,7 @@ async function sweepCurrentPage(run) {
 
   const nextPageLink = document.querySelector(".ui-paginator-next");
   if (nextPageLink && !nextPageLink.classList.contains("ui-state-disabled")) {
-    realClick(nextPageLink);
+    await realNavigationClick(nextPageLink);
     await waitForAjaxIdle({ label: "AJAX da próxima página da lista de empresas" });
     // A tabela é recriada via AJAX a cada página — mesma cautela do clique de linha (ver realClick em dom-utils.js).
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -86,7 +86,7 @@ async function searchContribuinte(cnpj) {
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");
-  realClick(filtrarButton);
+  await realNavigationClick(filtrarButton);
   await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
@@ -176,7 +176,7 @@ async function openExtractionForm() {
 async function openSolicitacoesTab() {
   const tabLink = findByExactText("a", "Solicitações");
   if (!tabLink) throw new Error("ABA_SOLICITACOES_NAO_ENCONTRADA");
-  realClick(tabLink);
+  await realNavigationClick(tabLink);
   await waitForAjaxIdle({ label: "AJAX da aba Solicitações terminar" });
   await waitFor(() => document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data"), { timeoutMs: 10000, label: "tabela de solicitações carregar" });
 }
@@ -207,7 +207,7 @@ async function readLatestSolicitacaoAndAct(run) {
 
   if (status === "PRONTO_PARA_BAIXAR") {
     await chrome.runtime.sendMessage({ type: "EXPECT_DOWNLOAD" });
-    if (situacaoLink) realClick(situacaoLink);
+    if (situacaoLink) await realNavigationClick(situacaoLink);
     // dá um tempo pro download disparar e o background capturar; se em vez disso
     // abrir um modal (nosso mapeamento de texto errou), lê o modal e reclassifica.
     const dialog = await waitFor(() => {
@@ -217,7 +217,7 @@ async function readLatestSolicitacaoAndAct(run) {
     if (dialog) {
       const realStatus = classifySituacao(dialog.textContent);
       const fechar = findByExactText("button", "Fechar", dialog) ?? dialog.querySelector("button");
-      if (fechar) realClick(fechar);
+      if (fechar) await realNavigationClick(fechar);
       await reportStatus(realStatus === "PRONTO_PARA_BAIXAR" ? "AGUARDANDO_INTERVENCAO" : realStatus, { sefazReferencia: referencia });
       return;
     }
@@ -234,13 +234,13 @@ async function selectParticipante(label) {
   const target = findByExactText("label", label);
   if (!target) throw new Error(`OPCAO_PARTICIPANTE_NAO_ENCONTRADA: ${label}`);
   const radio = target.closest("td")?.querySelector('input[type="radio"]') ?? document.getElementById(target.getAttribute("for"));
-  realClick(radio ?? target);
+  await realNavigationClick(radio ?? target);
 }
 
 async function fillAndSubmitExtractionForm(run) {
   const mesesRadio = document.getElementById("FrmSolicitarExtracaoDfe:tpPesquisaDM:1");
   if (!mesesRadio.checked) {
-    realClick(mesesRadio);
+    await realNavigationClick(mesesRadio);
     await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000, label: "campos de data aparecerem após marcar Meses" });
   }
   // Fecha o calendário popup que abre ao marcar "Meses", e seta o valor direto —
@@ -252,7 +252,7 @@ async function fillAndSubmitExtractionForm(run) {
 
   const docRadio = document.querySelector(`input[name="FrmSolicitarExtracaoDfe:tpDocumento"][value="${DOC_VALUE[run.tipoDocumento]}"]`);
   if (!docRadio) throw new Error(`OPCAO_DOCUMENTO_NAO_ENCONTRADA: ${run.tipoDocumento}`);
-  realClick(docRadio);
+  await realNavigationClick(docRadio);
   await waitForAjaxIdle({ label: "AJAX popular PARTICIPA DO DOCUMENTO COMO" });
 
   await selectParticipante(PARTICIPANTE_LABEL[run.papel]);
