@@ -1,14 +1,20 @@
 // Carregado antes de content-home.js/content-fisco.js no mesmo mundo isolado —
 // funções globais simples, sem módulos ES (mais simples de declarar em manifest.json).
 
-/** Espera até `check()` retornar algo truthy, ou estoura timeout. Faz polling em vez de depender de eventos do jQuery/PrimeFaces, que não são visíveis do mundo isolado da extensão. */
-function waitFor(check, { timeoutMs = 15000, intervalMs = 150 } = {}) {
+/**
+ * Espera até `check()` retornar algo truthy, ou estoura timeout. Faz polling
+ * em vez de depender de eventos do jQuery/PrimeFaces, que não são visíveis do
+ * mundo isolado da extensão. `label` identifica a espera na mensagem de erro
+ * (ex.: "modal Escolha um perfil abrir") — sem isso, todo timeout vira o mesmo
+ * "TIMEOUT_WAITING_FOR_CONDITION" genérico e não dá pra saber qual etapa travou.
+ */
+function waitFor(check, { timeoutMs = 15000, intervalMs = 150, label = "condição" } = {}) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const tick = () => {
       const value = check();
       if (value) return resolve(value);
-      if (Date.now() - start > timeoutMs) return reject(new Error("TIMEOUT_WAITING_FOR_CONDITION"));
+      if (Date.now() - start > timeoutMs) return reject(new Error(`TIMEOUT: ${label} (${timeoutMs}ms) em ${location.pathname}`));
       setTimeout(tick, intervalMs);
     };
     tick();

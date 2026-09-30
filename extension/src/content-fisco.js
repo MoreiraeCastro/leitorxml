@@ -41,8 +41,9 @@ async function handleListaContribuintes(run) {
   setInputValue(searchInput, formatCnpjMask(run.establishment.cnpj));
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
+  if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");
   realClick(filtrarButton);
-  await waitForAjaxIdle();
+  await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
   const emptyRow = body?.querySelector(".ui-datatable-empty-message");
@@ -63,7 +64,7 @@ async function handleListaContribuintes(run) {
     await chrome.runtime.sendMessage({ type: "DISCOVERY_FOUND", grupo: current.grupo, posicao: current.posicao });
   }
   realClick(row);
-  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
+  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
 }
 
 /**
@@ -96,14 +97,18 @@ function readHeaderCnpj() {
 async function openExtractionForm() {
   const link = document.getElementById("frmMenuLateral:fieldExtracaoID") ?? findByExactText("a", "Extração de documentos fiscais");
   realClick(link);
-  await waitFor(() => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe"), { timeoutMs: 15000 });
+  await waitFor(() => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe"), {
+    timeoutMs: 15000,
+    label: "abrir formulário de extração",
+  });
 }
 
 async function openSolicitacoesTab() {
   const tabLink = findByExactText("a", "Solicitações");
+  if (!tabLink) throw new Error("ABA_SOLICITACOES_NAO_ENCONTRADA");
   realClick(tabLink);
-  await waitForAjaxIdle();
-  await waitFor(() => document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data"), { timeoutMs: 10000 });
+  await waitForAjaxIdle({ label: "AJAX da aba Solicitações terminar" });
+  await waitFor(() => document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data"), { timeoutMs: 10000, label: "tabela de solicitações carregar" });
 }
 
 function classifySituacao(text) {
@@ -138,7 +143,7 @@ async function readLatestSolicitacaoAndAct(run) {
     const dialog = await waitFor(() => {
       const el = [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetParent && d.textContent.includes("Solicitação de Extração"));
       return el ?? null;
-    }, { timeoutMs: 4000 }).catch(() => null);
+    }, { timeoutMs: 4000, label: "modal de resultado da solicitação aparecer" }).catch(() => null);
     if (dialog) {
       const realStatus = classifySituacao(dialog.textContent);
       const fechar = findByExactText("button", "Fechar", dialog) ?? dialog.querySelector("button");
@@ -166,7 +171,7 @@ async function fillAndSubmitExtractionForm(run) {
   const mesesRadio = document.getElementById("FrmSolicitarExtracaoDfe:tpPesquisaDM:1");
   if (!mesesRadio.checked) {
     realClick(mesesRadio);
-    await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000 });
+    await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000, label: "campos de data aparecerem após marcar Meses" });
   }
   // Fecha o calendário popup que abre ao marcar "Meses", e seta o valor direto —
   // não navega o datepicker por clique. Formato a confirmar na PoC (ver formatCompetencia).
@@ -178,13 +183,14 @@ async function fillAndSubmitExtractionForm(run) {
   const docRadio = document.querySelector(`input[name="FrmSolicitarExtracaoDfe:tpDocumento"][value="${DOC_VALUE[run.tipoDocumento]}"]`);
   if (!docRadio) throw new Error(`OPCAO_DOCUMENTO_NAO_ENCONTRADA: ${run.tipoDocumento}`);
   realClick(docRadio);
-  await waitForAjaxIdle(); // popula PARTICIPA DO DOCUMENTO COMO via AJAX
+  await waitForAjaxIdle({ label: "AJAX popular PARTICIPA DO DOCUMENTO COMO" });
 
   await selectParticipante(PARTICIPANTE_LABEL[run.papel]);
 
   const confirmar = document.getElementById("FrmSolicitarExtracaoDfe:submitPesquisa");
+  if (!confirmar) throw new Error("BOTAO_CONFIRMAR_EXTRACAO_NAO_ENCONTRADO");
   realClick(confirmar);
-  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
+  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação de volta após confirmar solicitação de extração" });
 }
 
 // ---------- Orquestração ----------

@@ -16,7 +16,7 @@ async function getActiveRun() {
 async function readCertificateHolderNameOnHome() {
   const el = await waitFor(
     () => [...document.querySelectorAll("h6")].find((h) => h.className.includes("text-body")) ?? null,
-    { timeoutMs: 5000 },
+    { timeoutMs: 5000, label: "painel Minha conta (nome do certificado)" },
   ).catch(() => null);
   return el?.textContent.trim() ?? null;
 }
@@ -53,16 +53,19 @@ function collectProcuracaoLinks(container) {
 
 /** Abre o modal "Escolha um perfil" e devolve o container com os links já carregados (AJAX). */
 async function openAutoFiscoFacilModal() {
-  const card = await waitFor(findAutoFiscoFacilCard, { timeoutMs: 10000 });
+  const card = await waitFor(findAutoFiscoFacilCard, { timeoutMs: 10000, label: "card AUTO Fisco Fácil aparecer" });
   realClick(card);
 
   await waitFor(() => {
     const el = document.getElementById("modalAutorizacoes");
     return el?.classList.contains("show") ? el : null;
-  }, { timeoutMs: 10000 });
+  }, { timeoutMs: 10000, label: "modal Escolha um perfil abrir" });
 
   const container = document.getElementById("conteudoModalAutorizacoes");
-  await waitFor(() => (container && container.textContent.includes("Acesso por procuração") ? true : null), { timeoutMs: 10000 });
+  await waitFor(() => (container && container.textContent.includes("Acesso por procuração") ? true : null), {
+    timeoutMs: 10000,
+    label: "links de procuração carregarem no modal (AJAX)",
+  });
   return container;
 }
 
