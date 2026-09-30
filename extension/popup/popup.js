@@ -50,9 +50,15 @@ document.getElementById("startSweep").addEventListener("click", async () => {
 document.getElementById("startNext").addEventListener("click", async () => {
   statusEl.textContent = "Buscando...";
   const response = await chrome.runtime.sendMessage({ type: "REQUEST_NEXT_TASK" });
-  if (!response.ok) statusEl.textContent = `Erro: ${response.error}`;
-  else if (!response.run) statusEl.textContent = "Nada pendente no momento.";
-  else statusEl.textContent = `Iniciando: ${response.run.establishment.razaoSocial} — ${response.run.tipoDocumento}/${response.run.papel}`;
+  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") {
+    statusEl.textContent = `Já tem uma tarefa em andamento — espera terminar antes de buscar outra.\n${describeRun(response.run)}`;
+  } else if (!response.ok) {
+    statusEl.textContent = `Erro: ${response.error}`;
+  } else if (!response.run) {
+    statusEl.textContent = "Nada pendente no momento.";
+  } else {
+    statusEl.textContent = `Iniciando: ${response.run.establishment.razaoSocial} — ${response.run.tipoDocumento}/${response.run.papel}`;
+  }
 });
 
 load();

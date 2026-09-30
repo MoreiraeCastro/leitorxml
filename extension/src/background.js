@@ -216,6 +216,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       switch (message.type) {
         case "REQUEST_NEXT_TASK": {
+          // Evita clicar "Buscar próxima tarefa" de novo em cima de uma corrida ainda em
+          // andamento — isso reivindicava outra tarefa sem liberar a trava da anterior,
+          // deixando estabelecimentos travados abandonados pra trás (confirmado ao vivo,
+          // 2026-09-30). Só permite se não houver activeRun, ou se `force: true` vier explícito.
+          const existing = await getActiveRun();
+          if (existing && !message.force) {
+            sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
+            break;
+          }
           const run = await claimNextTaskAndPrepare();
           sendResponse({ ok: true, run });
           break;
