@@ -37,6 +37,24 @@ async function goBackWithFreshLoad(tabId) {
   });
 }
 
+/**
+ * Clique de verdade via Chrome DevTools Protocol (Input.dispatchMouseEvent),
+ * não `dispatchEvent()` — o navegador só conta isso como "ativação de
+ * usuário" real quando vem do CDP (ou de um gesto humano de fato). Exige a
+ * permissão "debugger" e mostra a barra "está depurando este navegador"
+ * enquanto anexado — por isso desanexa (`detach`) logo depois de clicar.
+ */
+async function dispatchRealClick(tabId, x, y) {
+  await chrome.debugger.attach({ tabId }, "1.3");
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+  } finally {
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+  }
+}
+
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
@@ -208,28 +226,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
-        case "INVOKE_CHAMA_APLICACAO": {
-          // Chama chamaAplicacao(...) direto no mundo principal da página (não dá pra
-          // acessar funções globais do site a partir do mundo isolado do content
-          // script) — bypassa clique sintético, que se mostrou inconsistente ao vivo
-          // pra entrar na 2ª procuração em diante.
+        case "REAL_CLICK": {
+          // Clique sintético (dispatchEvent) e chamar chamaAplicacao(...) direto no
+          // mundo principal da página falharam silenciosamente a partir da 2ª
+          // procuração em diante (confirmado ao vivo, 2026-09-30) — só um clique
+          // humano de verdade funcionava. chrome.debugger dispara um clique via CDP
+          // que o navegador trata como gesto real de usuário, ao contrário de
+          // qualquer clique disparado por JS.
           const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*", active: true });
           if (!tab) return sendResponse({ ok: false, error: "ABA_SSACERT_NAO_ENCONTRADA" });
-          const { url, sistema, perfil, orgao, classe, ds, origem } = message.args;
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            world: "MAIN",
-            func: (u, s, p, o, c, d, or) => {
-              try {
-                window.chamaAplicacao(u, Number(s), Number(p), Number(o), Number(c), d, Number(or), false);
-              } catch {
-                // chamaAplicacao do site tem um bug conhecido (janela is not defined) que
-                // dispara DEPOIS do form.submit() que realmente importa — inofensivo.
-              }
-            },
-            args: [url, sistema, perfil, orgao, classe, ds, origem],
-          });
-          sendResponse({ ok: true });
+          try {
+            await dispatchRealClick(tab.id, message.x, message.y);
+            sendResponse({ ok: true });
+          } catch (error) {
+            sendResponse({ ok: false, error: `REAL_CLICK_FALHOU: ${error.message} (se o DevTools estiver aberto nessa aba, chrome.debugger não consegue anexar — feche o F12 e tente de novo)` });
+          }
           break;
         }
         case "SET_DISCOVERY_QUEUE": {

@@ -26,18 +26,15 @@ function findAutoFiscoFacilCard() {
   return heading?.closest("a.card") ?? null;
 }
 
-const CHAMA_APLICACAO_RE =
-  /chamaAplicacao\(\s*'([^']*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\s*,\s*(\d+)\s*,\s*(true|false)\s*\)/;
+const CHAMA_APLICACAO_PERFIL_RE = /chamaAplicacao\(\s*'[^']*'\s*,\s*\d+\s*,\s*(\d+)\s*,/;
 
 /**
  * Varre #conteudoModalAutorizacoes por grupo (`h6.fw-bold`, ex.: "SUBFIN") e
  * link de acesso (`span[onclick*="chamaAplicacao"]`) — confirmado via HTML
  * real capturado ao vivo em 2026-09-30. Usa o `perfil` (2º argumento
- * numérico de `chamaAplicacao(url, sistema, perfil, orgao, classe, ds,
- * origem, fullScreen)`) como identificador de posição — é o ID real e
- * estável que o servidor usa, não uma contagem de ordem no DOM (frágil,
- * usada antes; abandonada por causar entradas inconsistentes entre
- * reaberturas do modal).
+ * numérico de `chamaAplicacao(url, sistema, perfil, orgao, ...)`) como
+ * identificador de posição — é o ID real e estável que o servidor usa, não
+ * uma contagem de ordem no DOM (frágil, usada antes).
  */
 function collectProcuracaoLinks(container) {
   const items = [];
@@ -47,10 +44,9 @@ function collectProcuracaoLinks(container) {
       currentGroup = el.textContent.trim();
       continue;
     }
-    const match = CHAMA_APLICACAO_RE.exec(el.getAttribute("onclick") ?? "");
+    const match = CHAMA_APLICACAO_PERFIL_RE.exec(el.getAttribute("onclick") ?? "");
     if (!match) continue;
-    const [, url, sistema, perfil, orgao, classe, ds, origem] = match;
-    items.push({ grupo: currentGroup, posicao: Number(perfil), args: { url, sistema, perfil, orgao, classe, ds, origem } });
+    items.push({ grupo: currentGroup, posicao: Number(match[1]), element: el });
   }
   return items;
 }
@@ -76,17 +72,19 @@ async function openAutoFiscoFacilModal() {
 /** Todas as posições de procuração visíveis no modal agora. */
 async function listProcuracaoPositions() {
   const container = await openAutoFiscoFacilModal();
-  return collectProcuracaoLinks(container);
+  // `element` não é serializável pra guardar na fila (chrome.storage.session) — só grupo/posição.
+  return collectProcuracaoLinks(container).map(({ grupo, posicao }) => ({ grupo, posicao }));
 }
 
 /**
- * Entra numa procuração chamando `chamaAplicacao(...)` diretamente no mundo
- * principal da página (via background, que tem `chrome.scripting` com
- * `world: "MAIN"`) — não depende de clique sintético disparar o onclick do
- * `<span>` corretamente, o que se mostrou inconsistente ao vivo (a 2ª
- * procuração em diante às vezes não navegava, sem erro nenhum). A própria
- * `chamaAplicacao` do site tem um bug conhecido (`janela is not defined`)
- * que dispara DEPOIS do `form.submit()` que realmente importa — inofensivo.
+ * Entra numa procuração disparando um clique de verdade (via
+ * `chrome.debugger`/CDP, no background) nas coordenadas do link. Tanto
+ * clique sintético (`dispatchEvent`) quanto chamar `chamaAplicacao(...)`
+ * direto no mundo principal falharam silenciosamente a partir da 2ª
+ * procuração em diante (confirmado ao vivo, 2026-09-30) — só um clique
+ * humano de verdade funcionava. O navegador provavelmente exige "ativação
+ * de usuário" real pra essa navegação, que nem clique sintético nem chamada
+ * direta de função carregam; um clique via CDP conta como gesto real.
  */
 async function enterProcuracao(grupo, posicao) {
   const container = await openAutoFiscoFacilModal();
@@ -95,7 +93,12 @@ async function enterProcuracao(grupo, posicao) {
   if (!match) {
     throw new Error(`PROCURACAO_NAO_ENCONTRADA: grupo=${grupo} posicao=${posicao} (encontrados: ${links.length})`);
   }
-  await chrome.runtime.sendMessage({ type: "INVOKE_CHAMA_APLICACAO", args: match.args });
+  match.element.scrollIntoView({ block: "center" });
+  await new Promise((resolve) => setTimeout(resolve, 150)); // deixa o scroll assentar antes de medir a posição na tela
+  const rect = match.element.getBoundingClientRect();
+  const x = Math.round(rect.left + rect.width / 2);
+  const y = Math.round(rect.top + rect.height / 2);
+  await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
   // Navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí.
 }
 
