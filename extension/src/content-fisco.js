@@ -25,10 +25,6 @@ async function reportFailure(motivo) {
   await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo });
 }
 
-function formatCnpjMask(cnpj) {
-  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-}
-
 /** Formata como visto na tela após escolher "Meses" (ex.: "08/2026"). Ponto a validar na PoC — pode ser que o servidor espere outro formato. */
 function formatCompetencia(ano, mes) {
   return `${String(mes).padStart(2, "0")}/${ano}`;
@@ -84,7 +80,9 @@ async function sweepCurrentPage(run) {
 async function searchContribuinte(cnpj) {
   const searchInput = document.getElementById("FrmFisco:valorDaPesquisa_input") ?? document.getElementById("FrmFisco:valorDaPesquisa");
   if (!searchInput) throw new Error("CAMPO_BUSCA_CNPJ_NAO_ENCONTRADO");
-  setInputValue(searchInput, formatCnpjMask(cnpj));
+  // InputMask — digita dígito por dígito via eventos de teclado, não seta o valor
+  // mascarado direto (a lib insere a pontuação sozinha à medida que "digita").
+  typeIntoMaskedInput(searchInput, cnpj);
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");

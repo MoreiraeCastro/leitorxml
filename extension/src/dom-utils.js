@@ -96,6 +96,30 @@ function setInputValue(input, value) {
 }
 
 /**
+ * Simula digitação real, caractere por caractere, via eventos de teclado —
+ * necessário pra campos "InputMask" (ex.: busca por CNPJ do Fisco Fácil, que
+ * usa jquery.inputmask): essas libs reimplementam a inserção de texto via JS
+ * escutando keydown, sem confiar na inserção nativa do navegador — setar
+ * `.value` direto (setInputValue) não passa pelo estado interno delas, e o
+ * campo acaba mandando vazio pro servidor. Confirmado ao vivo, 2026-09-30:
+ * busca por CNPJ silenciosamente não filtrava, sempre caindo na 1ª linha da
+ * lista sem filtro. NÃO seta `.value` manualmente — deixa a lib do campo
+ * fazer isso sozinha em reação a cada evento, igual faria com teclado de verdade.
+ */
+function typeIntoMaskedInput(input, text) {
+  input.focus();
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  setter.call(input, ""); // limpa antes (importante numa 2ª tentativa, com conteúdo antigo no campo)
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  for (const char of text) {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true, cancelable: true }));
+    input.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true, cancelable: true }));
+    input.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true, cancelable: true }));
+  }
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
  * "Certificado conectado / empresa selecionada" — atualizado por todo content
  * script sempre que carrega, independente de haver uma tarefa em andamento.
  * O popup lê isto pra mostrar o status sem precisar abrir o Fisco Fácil pra ver.

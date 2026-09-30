@@ -43,6 +43,7 @@ Tela "Nova extração" e cadastro manual em "Estabelecimentos" continuam existin
 5. **Captura de download via `chrome.downloads` + refetch da URL resolvida** — desenho razoável, mas nunca testado contra um "Processada com resultado" de verdade (não existia nenhum disponível durante o desenvolvimento).
 6. **Paginação da lista de empresas (`.ui-paginator-next`) na varredura completa.** Implementada a partir do markup real (confirmado: `.ui-paginator-next`/`.ui-state-disabled`), mas nunca exercitada ao vivo contra uma procuração com mais de uma página — só vimos o print, não testamos clicar "próxima página" de verdade.
 7. **Varredura completa (Fase 1) inteira é nova, 2026-09-30, não validada ponta a ponta.** O clique de linha (Fase 2) precisou de um delay de 500ms pra funcionar depois da tabela recriar via AJAX — a leitura de linhas na Fase 1 não clica em nada, só lê texto, então talvez não precise da mesma cautela, mas não foi confirmado ao vivo ainda.
+8. **Busca por CNPJ é um InputMask do PrimeFaces** — setar `.value` direto (`setInputValue`) não atualiza o estado interno da lib, e o campo manda vazio pro servidor (a extensão então clicava na 1ª linha da lista SEM filtro, quase pegando a empresa errada — pego por uma checagem de CNPJ que já existia depois). Corrigido com `typeIntoMaskedInput()` (simula digitação real via eventos de teclado). Ainda assim, `handleListaContribuintes` sempre confere o CNPJ da linha antes de clicar, nunca confia cegamente na busca.
 
 ### Bugs reais do próprio Fisco Fácil (não nossos, mas afetam a automação)
 
