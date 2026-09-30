@@ -80,10 +80,11 @@ async function sweepCurrentPage(run) {
   await chrome.runtime.sendMessage({ type: "SWEEP_NEXT_POSITION" });
 }
 
-async function handleListaContribuintes(run) {
+/** Busca por CNPJ e devolve a 1ª linha do resultado, ou null se vier vazio ("nenhum resultado"). */
+async function searchContribuinte(cnpj) {
   const searchInput = document.getElementById("FrmFisco:valorDaPesquisa_input") ?? document.getElementById("FrmFisco:valorDaPesquisa");
   if (!searchInput) throw new Error("CAMPO_BUSCA_CNPJ_NAO_ENCONTRADO");
-  setInputValue(searchInput, formatCnpjMask(run.establishment.cnpj));
+  setInputValue(searchInput, formatCnpjMask(cnpj));
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");
@@ -91,8 +92,29 @@ async function handleListaContribuintes(run) {
   await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
-  const emptyRow = body?.querySelector(".ui-datatable-empty-message");
-  if (emptyRow) {
+  if (body?.querySelector(".ui-datatable-empty-message")) return null;
+  return body?.querySelector("tr") ?? null;
+}
+
+function readRowCnpj(row) {
+  return row.querySelectorAll("td")[1]?.textContent.trim().replace(/\D/g, "") ?? null;
+}
+
+async function handleListaContribuintes(run) {
+  let row = await searchContribuinte(run.establishment.cnpj);
+  // O campo de busca é um InputMask do PrimeFaces — setar o valor direto às vezes não
+  // "gruda" da primeira vez (confirmado ao vivo, 2026-09-30: caiu na 1ª linha da lista
+  // SEM filtro, não na empresa buscada). Nunca confia cegamente no resultado — sempre
+  // confere o CNPJ da linha antes de clicar; se não bater, tenta buscar mais uma vez.
+  if (row && readRowCnpj(row) !== run.establishment.cnpj) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    row = await searchContribuinte(run.establishment.cnpj);
+    if (row && readRowCnpj(row) !== run.establishment.cnpj) {
+      throw new Error(`BUSCA_NAO_FILTROU: esperava ${run.establishment.cnpj}, achou ${readRowCnpj(row)} na lista após 2 tentativas`);
+    }
+  }
+
+  if (!row) {
     if (run.discovery) {
       // Não é essa procuração — pede pro background tentar a próxima da fila (history.back() + reclique).
       await chrome.runtime.sendMessage({ type: "DISCOVERY_NOT_FOUND" });
@@ -100,9 +122,6 @@ async function handleListaContribuintes(run) {
     }
     throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj}`);
   }
-
-  const row = body?.querySelector("tr");
-  if (!row) throw new Error("LINHA_DA_EMPRESA_NAO_ENCONTRADA");
   if (run.discovery) {
     // Achou — reporta pro backend cachear (grupo, posição, CNPJ) no índice antes de prosseguir.
     const current = run.discovery.queue[run.discovery.cursor];
