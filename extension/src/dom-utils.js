@@ -78,9 +78,15 @@ function realClick(el) {
  * sempre funcionou em todos os testes).
  */
 async function realNavigationClick(el) {
-  el.scrollIntoView({ block: "center" });
-  await new Promise((resolve) => setTimeout(resolve, 150)); // deixa o scroll assentar antes de medir a posição na tela
+  // behavior:"instant" evita rolagem suave — se a página tiver scroll-behavior:
+  // smooth (comum em CSS moderno) e a gente medir a posição antes da rolagem
+  // terminar, o clique via CDP acerta coordenadas erradas sem erro nenhum.
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  await new Promise((resolve) => setTimeout(resolve, 300)); // deixa o layout assentar antes de medir a posição na tela
   const rect = el.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    throw new Error(`REAL_CLICK_ALVO_SEM_TAMANHO: elemento com rect ${JSON.stringify(rect)} — provavelmente invisível ou fora da tela`);
+  }
   const x = Math.round(rect.left + rect.width / 2);
   const y = Math.round(rect.top + rect.height / 2);
   const response = await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
