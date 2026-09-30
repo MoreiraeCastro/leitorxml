@@ -82,7 +82,7 @@ async function searchContribuinte(cnpj) {
   if (!searchInput) throw new Error("CAMPO_BUSCA_CNPJ_NAO_ENCONTRADO");
   // InputMask — digita dígito por dígito via eventos de teclado, não seta o valor
   // mascarado direto (a lib insere a pontuação sozinha à medida que "digita").
-  typeIntoMaskedInput(searchInput, cnpj);
+  await typeIntoMaskedInput(searchInput, cnpj);
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");

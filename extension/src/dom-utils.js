@@ -96,27 +96,22 @@ function setInputValue(input, value) {
 }
 
 /**
- * Simula digitação real, caractere por caractere, via eventos de teclado —
- * necessário pra campos "InputMask" (ex.: busca por CNPJ do Fisco Fácil, que
- * usa jquery.inputmask): essas libs reimplementam a inserção de texto via JS
- * escutando keydown, sem confiar na inserção nativa do navegador — setar
- * `.value` direto (setInputValue) não passa pelo estado interno delas, e o
- * campo acaba mandando vazio pro servidor. Confirmado ao vivo, 2026-09-30:
- * busca por CNPJ silenciosamente não filtrava, sempre caindo na 1ª linha da
- * lista sem filtro. NÃO seta `.value` manualmente — deixa a lib do campo
- * fazer isso sozinha em reação a cada evento, igual faria com teclado de verdade.
+ * Digitação real (via chrome.debugger/CDP, mensagem REAL_TYPE) num campo
+ * "InputMask" (ex.: busca por CNPJ do Fisco Fácil, jquery.inputmask) — essas
+ * libs reimplementam a inserção de texto via JS, sem confiar na inserção
+ * nativa do navegador. Nem setar `.value` direto (`setInputValue`) nem
+ * disparar `KeyboardEvent` sintético funcionam: o primeiro faz a lib mandar
+ * um valor errado/truncado pro servidor, o segundo é simplesmente ignorado
+ * (campo fica vazio) — ambos confirmados ao vivo, 2026-09-30. `Input.insertText`
+ * via CDP passa pela inserção nativa de texto de verdade.
  */
-function typeIntoMaskedInput(input, text) {
+async function typeIntoMaskedInput(input, text) {
   input.focus();
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
   setter.call(input, ""); // limpa antes (importante numa 2ª tentativa, com conteúdo antigo no campo)
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  for (const char of text) {
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true, cancelable: true }));
-    input.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true, cancelable: true }));
-    input.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true, cancelable: true }));
-  }
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+  const response = await chrome.runtime.sendMessage({ type: "REAL_TYPE", text });
+  if (!response?.ok) throw new Error(response?.error ?? "REAL_TYPE_FALHOU");
 }
 
 /**

@@ -55,6 +55,23 @@ async function dispatchRealClick(tabId, x, y) {
   }
 }
 
+/**
+ * Digitação real via CDP (Input.insertText) — dispatchEvent(KeyboardEvent) na
+ * própria página não funciona em campos "InputMask" (confirmado ao vivo,
+ * 2026-09-30: o campo de busca ficou completamente vazio, a lib nem reagiu
+ * aos eventos sintéticos). Input.insertText passa pela inserção nativa de
+ * texto do navegador de verdade — o elemento alvo precisa já estar focado
+ * (o content script chama `.focus()` antes de mandar a mensagem).
+ */
+async function dispatchRealType(tabId, text) {
+  await chrome.debugger.attach({ tabId }, "1.3");
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text });
+  } finally {
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+  }
+}
+
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
@@ -240,6 +257,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, error: `REAL_CLICK_FALHOU: ${error.message} (se o DevTools estiver aberto nessa aba, chrome.debugger não consegue anexar — feche o F12 e tente de novo)` });
+          }
+          break;
+        }
+        case "REAL_TYPE": {
+          // Mesmo motivo do REAL_CLICK — campos "InputMask" não reagem a eventos de
+          // teclado sintéticos da página. O elemento já precisa estar focado.
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
+          try {
+            await dispatchRealType(sender.tab.id, message.text);
+            sendResponse({ ok: true });
+          } catch (error) {
+            sendResponse({ ok: false, error: `REAL_TYPE_FALHOU: ${error.message} (se o DevTools estiver aberto nessa aba, chrome.debugger não consegue anexar — feche o F12 e tente de novo)` });
           }
           break;
         }
