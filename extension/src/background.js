@@ -6,6 +6,12 @@
 
 const HOME_URL = "https://ssacert.fazenda.rj.gov.br/ssa/certificadoWeb";
 
+// chrome.storage.session só é acessível de contextos confiáveis (páginas da
+// extensão/service worker) por padrão — content scripts levam "Access to
+// storage is not allowed from this context" até isto ser liberado. Precisa
+// rodar toda vez que o service worker acorda (não persiste sozinho).
+chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" }).catch(() => {});
+
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
