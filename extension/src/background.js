@@ -72,6 +72,32 @@ async function dispatchRealType(tabId, text) {
   }
 }
 
+/**
+ * Pré-define `window.options` no MUNDO PRINCIPAL da página (não no mundo
+ * isolado do content script) — bug real do próprio Fisco Fácil confirmado
+ * ao vivo em 2026-09-30 via DevTools: o onclick do botão "Filtrar" (e
+ * provavelmente outros — é um template genérico do PrimeFaces reusado em
+ * vários botões) chama `PrimeFaces.bcn(this, event, [function(event){
+ * showLoading(options)}, function(event){ /* AJAX de verdade *\/ }])`, e
+ * `options` nunca é declarado em `principalContribuintes.xhtml` — estoura
+ * `ReferenceError: options is not defined` DENTRO da cadeia do PrimeFaces,
+ * abortando antes da 2ª função (a que de fato dispara o AJAX) rodar. O
+ * clique "funciona" do nosso lado (CDP não erra), mas nada acontece na
+ * tela. `chrome.scripting.executeScript({world:"MAIN"})` roda no contexto
+ * de JS da própria página (diferente de uma `<script>` injetada via DOM,
+ * que a CSP da página bloquearia) e não precisa de nenhuma permissão além
+ * de "scripting", que já temos.
+ */
+async function ensurePageGlobals(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: () => {
+      window.options = window.options ?? {};
+    },
+  });
+}
+
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
@@ -383,6 +409,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "EXPECT_DOWNLOAD": {
           const run = await getActiveRun();
           if (run) expectedDownloadTaskId = run.taskId;
+          sendResponse({ ok: true });
+          break;
+        }
+        case "ENSURE_PAGE_GLOBALS": {
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
+          await ensurePageGlobals(sender.tab.id);
           sendResponse({ ok: true });
           break;
         }

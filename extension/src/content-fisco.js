@@ -270,6 +270,11 @@ async function fillAndSubmitExtractionForm(run) {
 
 // ---------- Orquestração ----------
 (async () => {
+  // Evita o ReferenceError: options is not defined do próprio Fisco Fácil
+  // (confirmado ao vivo, 2026-09-30) — precisa rodar ANTES de qualquer
+  // clique nesta página. Ver comentário de `ensurePageGlobals` em background.js.
+  await chrome.runtime.sendMessage({ type: "ENSURE_PAGE_GLOBALS" }).catch(() => {});
+
   const certificado = readCertificateHolderName();
   const { empresa, cnpj } = readSelectedCompany();
   if (certificado || empresa || cnpj) await setConnectionStatus({ certificado, empresa, cnpj });
