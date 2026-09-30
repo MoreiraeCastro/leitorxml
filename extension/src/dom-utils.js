@@ -43,9 +43,19 @@ function findAllByText(selector, text, root = document) {
   return [...root.querySelectorAll(selector)].filter((el) => el.textContent.trim().toLowerCase().includes(normalized));
 }
 
-/** Dispara um clique real (mousedown+mouseup+click) — mais fiel do que só .click() para widgets PrimeFaces que ouvem mousedown. */
+/**
+ * Dispara um clique real (mousedown+mouseup+click) — mais fiel do que só
+ * .click() para widgets PrimeFaces que ouvem mousedown. Botões PrimeFaces são
+ * quase todos type="submit" contando com o próprio handler onclick pra
+ * interceptar via AJAX (PrimeFaces.ab/.bcn) — se o clique sintético não
+ * disparar isso do jeito esperado, o navegador cai no submit nativo do form
+ * e recarrega a página inteira (visto ao vivo: reload completo repetido).
+ * Blindagem: nunca deixa um form submeter de verdade a partir de um clique nosso.
+ */
 function realClick(el) {
   el.scrollIntoView({ block: "center" });
+  const form = el.closest("form");
+  if (form) form.addEventListener("submit", (event) => event.preventDefault(), { capture: true, once: true });
   for (const type of ["mousedown", "mouseup", "click"]) {
     el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
   }
