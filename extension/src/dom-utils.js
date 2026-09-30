@@ -122,12 +122,24 @@ function setInputValue(input, value) {
  * via CDP passa pela inserção nativa de texto de verdade.
  */
 async function typeIntoMaskedInput(input, text) {
-  input.focus();
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-  setter.call(input, ""); // limpa antes (importante numa 2ª tentativa, com conteúdo antigo no campo)
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  const response = await chrome.runtime.sendMessage({ type: "REAL_TYPE", text });
-  if (!response?.ok) throw new Error(response?.error ?? "REAL_TYPE_FALHOU");
+  const digitsInField = () => (input.value || "").replace(/\D/g, "");
+  const expectedDigits = text.replace(/\D/g, "");
+  // Igual ao clique via CDP: o REAL_TYPE pode responder ok:true sem ter
+  // efeito nenhum no campo (visto ao vivo, 2026-09-30 — o campo ficou vazio
+  // mesmo com a mensagem retornando sucesso). Nunca confia cegamente: confere
+  // se o valor realmente entrou, e tenta de novo (1x) antes de falhar alto —
+  // continuar com o campo vazio faz a busca cair na 1ª linha sem filtro.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    input.focus();
+    setter.call(input, ""); // limpa antes (importante numa 2ª tentativa, com conteúdo antigo no campo)
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    const response = await chrome.runtime.sendMessage({ type: "REAL_TYPE", text });
+    if (!response?.ok) throw new Error(response?.error ?? "REAL_TYPE_FALHOU");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (digitsInField() === expectedDigits) return;
+  }
+  throw new Error(`REAL_TYPE_NAO_REFLETIU_NO_CAMPO: campo continua com "${input.value}" após 2 tentativas (esperava ${expectedDigits})`);
 }
 
 /**
