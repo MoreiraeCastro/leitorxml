@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findProcurationPosition } from "./procuration-index";
 
 /** Só uma sessão de navegador opera uma empresa por vez (§3.5 da Descoberta) — trava com TTL para não ficar presa se a extensão cair no meio de uma execução. */
 export const ESTABLISHMENT_LOCK_TTL_MS = 30 * 60 * 1000;
@@ -8,14 +9,23 @@ export function isEligibleForMonthlyRun(establishment: { ativo: boolean; situaca
   return establishment.ativo && establishment.situacaoCadastral !== "Baixada";
 }
 
-export type AccessContext = { type: "PROCURACAO"; grupo: string; posicao: number | null } | { type: "PROPRIO" };
+/** grupo/posicao nulos = ainda não descobertos — a extensão entra em modo descoberta em vez de travar pedindo cadastro manual. */
+export type AccessContext = { type: "PROCURACAO"; grupo: string | null; posicao: number | null } | { type: "PROPRIO" };
 
-export function resolveAccessContext(establishment: { certificadoTipo: string; procuracaoGrupo: string | null; procuracaoPosicao: number | null }): AccessContext {
-  if (establishment.certificadoTipo === "ESCRITORIO_PROCURACAO") {
-    if (!establishment.procuracaoGrupo) throw new Error("PROCURACAO_GRUPO_AUSENTE");
-    return { type: "PROCURACAO", grupo: establishment.procuracaoGrupo, posicao: establishment.procuracaoPosicao };
-  }
-  return { type: "PROPRIO" };
+/**
+ * O índice de procurações (populado pela própria extensão ao descobrir onde
+ * um CNPJ está) é a fonte de verdade — o grupo/posição preenchidos à mão no
+ * cadastro do estabelecimento são só uma dica opcional pra encurtar a busca
+ * na primeira vez, nunca uma exigência.
+ */
+export async function resolveAccessContext(
+  db: SupabaseClient,
+  establishment: { cnpj: string; certificadoTipo: string; procuracaoGrupo: string | null; procuracaoPosicao: number | null },
+): Promise<AccessContext> {
+  if (establishment.certificadoTipo !== "ESCRITORIO_PROCURACAO") return { type: "PROPRIO" };
+  const indexed = await findProcurationPosition(db, establishment.cnpj);
+  if (indexed) return { type: "PROCURACAO", grupo: indexed.procuracaoGrupo, posicao: indexed.posicao };
+  return { type: "PROCURACAO", grupo: establishment.procuracaoGrupo, posicao: establishment.procuracaoPosicao };
 }
 
 /** Compare-and-swap atômico: só trava se estiver livre ou com trava expirada. Evita corrida entre chamadas concorrentes de "próxima tarefa". */

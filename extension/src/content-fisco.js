@@ -46,10 +46,22 @@ async function handleListaContribuintes(run) {
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
   const emptyRow = body?.querySelector(".ui-datatable-empty-message");
-  if (emptyRow) throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj}`);
+  if (emptyRow) {
+    if (run.discovery) {
+      // Não é essa procuração — pede pro background tentar a próxima da fila (history.back() + reclique).
+      await chrome.runtime.sendMessage({ type: "DISCOVERY_NOT_FOUND" });
+      return;
+    }
+    throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj}`);
+  }
 
   const row = body?.querySelector("tr");
   if (!row) throw new Error("LINHA_DA_EMPRESA_NAO_ENCONTRADA");
+  if (run.discovery) {
+    // Achou — reporta pro backend cachear (grupo, posição, CNPJ) no índice antes de prosseguir.
+    const current = run.discovery.queue[run.discovery.cursor];
+    await chrome.runtime.sendMessage({ type: "DISCOVERY_FOUND", grupo: current.grupo, posicao: current.posicao });
+  }
   realClick(row);
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000 });
 }

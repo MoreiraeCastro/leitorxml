@@ -61,14 +61,15 @@ export function EstablishmentForm({ action, defaults, showAtivo }: { action: (fo
         </div>
         <div className="mt-3 grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
-            <label htmlFor="procuracaoGrupo" className={label}>Grupo da procuração</label>
+            <label htmlFor="procuracaoGrupo" className={label}>Grupo da procuração (opcional)</label>
             <input id="procuracaoGrupo" name="procuracaoGrupo" placeholder="ex.: SUBFIN" defaultValue={defaults?.procuracaoGrupo ?? ""} className={field} />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor="procuracaoPosicao" className={label}>Posição no índice (se já conhecida)</label>
+            <label htmlFor="procuracaoPosicao" className={label}>Posição no índice (opcional)</label>
             <input id="procuracaoPosicao" name="procuracaoPosicao" type="number" min={1} defaultValue={defaults?.procuracaoPosicao ?? undefined} className={field} />
           </div>
         </div>
+        <p className="mt-2 text-xs text-black/50">Deixe em branco se não souber — a extensão descobre sozinha na primeira coleta e guarda pra próxima vez.</p>
       </fieldset>
       {showAtivo && (
         <label className="flex items-center gap-2 text-sm">

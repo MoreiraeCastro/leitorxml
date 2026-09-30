@@ -110,7 +110,8 @@ export async function claimNextTask(db: SupabaseClient, userId: string, now: Dat
       continue;
     }
     const establishment = Array.isArray(candidate.xml_watch_establishments) ? candidate.xml_watch_establishments[0] : candidate.xml_watch_establishments;
-    const accessContext = resolveAccessContext({
+    const accessContext = await resolveAccessContext(db, {
+      cnpj: establishment.cnpj,
       certificadoTipo: establishment.certificado_tipo,
       procuracaoGrupo: establishment.procuracao_grupo,
       procuracaoPosicao: establishment.procuracao_posicao,

@@ -167,6 +167,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "SET_DISCOVERY_QUEUE": {
+          // content-home.js enumerou as posições do modal — guarda a fila e o cursor no activeRun.
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          const discovery = { queue: message.queue, cursor: 0 };
+          await setActiveRun({ ...run, discovery });
+          sendResponse({ ok: true, discovery });
+          break;
+        }
+        case "DISCOVERY_FOUND": {
+          // O CNPJ apareceu na posição sendo testada — cacheia no índice e segue o fluxo normal a partir daqui.
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          await reportProcuracaoIndice([
+            {
+              procuracaoGrupo: message.grupo,
+              posicao: message.posicao,
+              cnpj: run.establishment.cnpj,
+              situacaoCadastral: run.establishment.situacaoCadastral || "Habilitada",
+            },
+          ]);
+          await setActiveRun({ ...run, accessContext: { type: "PROCURACAO", grupo: message.grupo, posicao: message.posicao }, discovery: null });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "DISCOVERY_NOT_FOUND": {
+          // Não é essa posição — avança o cursor e volta pro histórico pra content-home.js testar a próxima.
+          const run = await getActiveRun();
+          if (!run?.discovery) return sendResponse({ ok: false, error: "NO_DISCOVERY_IN_PROGRESS" });
+          const nextCursor = run.discovery.cursor + 1;
+          if (nextCursor >= run.discovery.queue.length) {
+            await reportFalha(run.taskId, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`);
+            sendResponse({ ok: true, done: true });
+            break;
+          }
+          await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor } });
+          const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
+          if (tab) await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => history.back() });
+          sendResponse({ ok: true });
+          break;
+        }
         case "EXPECT_DOWNLOAD": {
           const run = await getActiveRun();
           if (run) expectedDownloadTaskId = run.taskId;

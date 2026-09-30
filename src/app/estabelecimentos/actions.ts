@@ -30,9 +30,8 @@ function parseForm(formData: FormData) {
     procuracaoGrupo: formData.get("procuracaoGrupo") || undefined,
     procuracaoPosicao: formData.get("procuracaoPosicao") || undefined,
   });
-  if (parsed.certificadoTipo === "ESCRITORIO_PROCURACAO" && !parsed.procuracaoGrupo) {
-    throw new Error("Informe o grupo de procuração para certificado do escritório.");
-  }
+  // Grupo/posição da procuração são dica opcional, não exigência: a extensão
+  // descobre sozinha (e cacheia no índice) na primeira coleta se ficarem em branco.
   return parsed;
 }
 

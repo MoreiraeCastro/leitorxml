@@ -20,7 +20,12 @@ export async function GET(request: Request) {
         tipoDocumento: claimed.task.tipo_documento,
         papel: claimed.task.papel,
       },
-      establishment: { id: claimed.establishment.id, cnpj: claimed.establishment.cnpj, razaoSocial: claimed.establishment.razao_social },
+      establishment: {
+        id: claimed.establishment.id,
+        cnpj: claimed.establishment.cnpj,
+        razaoSocial: claimed.establishment.razao_social,
+        situacaoCadastral: claimed.establishment.situacao_cadastral,
+      },
       accessContext: claimed.accessContext,
     });
   } catch {

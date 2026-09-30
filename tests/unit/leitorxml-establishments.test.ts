@@ -16,19 +16,49 @@ describe("isEligibleForMonthlyRun", () => {
   });
 });
 
+function fakeProcurationIndexDb(row: { procuracao_grupo: string; posicao: number } | null) {
+  return {
+    from(table: string) {
+      if (table !== "xml_watch_procuration_index") throw new Error(`tabela inesperada no fake: ${table}`);
+      return {
+        select: () => ({
+          eq: () => ({
+            order: () => ({
+              limit: () => ({
+                maybeSingle: async () => ({ data: row, error: null }),
+              }),
+            }),
+          }),
+        }),
+      };
+    },
+  } as unknown as import("@supabase/supabase-js").SupabaseClient;
+}
+
 describe("resolveAccessContext", () => {
-  it("resolve procuração quando o grupo está presente", () => {
-    expect(resolveAccessContext({ certificadoTipo: "ESCRITORIO_PROCURACAO", procuracaoGrupo: "SUBFIN", procuracaoPosicao: 5 })).toEqual({
-      type: "PROCURACAO",
-      grupo: "SUBFIN",
-      posicao: 5,
-    });
+  it("usa o índice quando o CNPJ já foi descoberto, ignorando a dica do cadastro", async () => {
+    const db = fakeProcurationIndexDb({ procuracao_grupo: "SUBFIN", posicao: 3 });
+    await expect(
+      resolveAccessContext(db, { cnpj: "28955848000193", certificadoTipo: "ESCRITORIO_PROCURACAO", procuracaoGrupo: "OUTRO", procuracaoPosicao: 99 }),
+    ).resolves.toEqual({ type: "PROCURACAO", grupo: "SUBFIN", posicao: 3 });
   });
-  it("lança erro quando o tipo é procuração mas falta o grupo", () => {
-    expect(() => resolveAccessContext({ certificadoTipo: "ESCRITORIO_PROCURACAO", procuracaoGrupo: null, procuracaoPosicao: null })).toThrow("PROCURACAO_GRUPO_AUSENTE");
+  it("cai para a dica manual do cadastro quando o CNPJ ainda não foi indexado", async () => {
+    const db = fakeProcurationIndexDb(null);
+    await expect(
+      resolveAccessContext(db, { cnpj: "28955848000193", certificadoTipo: "ESCRITORIO_PROCURACAO", procuracaoGrupo: "SUBFIN", procuracaoPosicao: 5 }),
+    ).resolves.toEqual({ type: "PROCURACAO", grupo: "SUBFIN", posicao: 5 });
   });
-  it("resolve certificado próprio", () => {
-    expect(resolveAccessContext({ certificadoTipo: "PROPRIO", procuracaoGrupo: null, procuracaoPosicao: null })).toEqual({ type: "PROPRIO" });
+  it("retorna grupo/posição nulos quando nada é conhecido — extensão entra em modo descoberta", async () => {
+    const db = fakeProcurationIndexDb(null);
+    await expect(
+      resolveAccessContext(db, { cnpj: "28955848000193", certificadoTipo: "ESCRITORIO_PROCURACAO", procuracaoGrupo: null, procuracaoPosicao: null }),
+    ).resolves.toEqual({ type: "PROCURACAO", grupo: null, posicao: null });
+  });
+  it("resolve certificado próprio sem consultar o índice", async () => {
+    const db = fakeProcurationIndexDb(null);
+    await expect(
+      resolveAccessContext(db, { cnpj: "28955848000193", certificadoTipo: "PROPRIO", procuracaoGrupo: null, procuracaoPosicao: null }),
+    ).resolves.toEqual({ type: "PROPRIO" });
   });
 });
 

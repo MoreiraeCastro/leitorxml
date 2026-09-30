@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 const entrySchema = z.object({
   procuracaoGrupo: z.string().trim().min(1).max(120),
   posicao: z.number().int().positive(),
-  cnpj: z.string().trim().length(14).optional().nullable(),
-  situacaoCadastral: z.string().trim().max(60).optional().nullable(),
+  cnpj: z.string().trim().length(14),
+  situacaoCadastral: z.string().trim().min(1).max(60),
 });
 const bodySchema = z.object({ entries: z.array(entrySchema).min(1).max(200) });
 
@@ -19,10 +19,7 @@ export async function POST(request: Request) {
   if (!identity) return NextResponse.json({ error: "Token inválido ou revogado." }, { status: 401 });
   try {
     const input = bodySchema.parse(await request.json());
-    await upsertProcurationIndex(
-      db,
-      input.entries.map((entry) => ({ procuracaoGrupo: entry.procuracaoGrupo, posicao: entry.posicao, cnpj: entry.cnpj ?? null, situacaoCadastral: entry.situacaoCadastral ?? null })),
-    );
+    await upsertProcurationIndex(db, input.entries);
     return NextResponse.json({ ok: true, upserted: input.entries.length });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Revise as entradas do índice." }, { status: 400 });
