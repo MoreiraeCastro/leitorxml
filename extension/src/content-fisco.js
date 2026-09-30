@@ -132,7 +132,12 @@ async function handleListaContribuintes(run) {
   // Clique real (chrome.debugger), não sintético — entrar na empresa depende de
   // navegação de página de verdade, que exige "ativação de usuário" (confirmado
   // ao vivo, 2026-09-30: mesmo bug do clique pra entrar em procuração).
-  await realNavigationClick(row);
+  // Clica na 1ª célula, não no centro da <tr> inteira — a tabela tem várias
+  // colunas (CNPJ, IE, Razão Social, Situação...) e pode ser mais larga que a
+  // janela visível; o centro horizontal da linha caiu fora da área visível
+  // pelo menos uma vez ao vivo (clique via CDP sem nenhum efeito, mesmo com
+  // coordenadas "válidas" — rect não-zero, mas fora do viewport).
+  await realNavigationClick(row.querySelector("td") ?? row);
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
 }
 
