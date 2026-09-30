@@ -199,6 +199,16 @@ async function fillAndSubmitExtractionForm(run) {
 
   try {
     if (location.pathname.includes("principalContribuintes")) {
+      // Trava de segurança: se algo impedir a navegação pra mainAbasContribuinte
+      // (ex.: o clique na linha não dispara o rowSelect do PrimeFaces do jeito
+      // esperado), o content script reinjeta aqui de novo a cada reload e tentaria
+      // pra sempre sem isso — melhor falhar alto do que ficar em loop.
+      const attempts = (run.listaContribuintesAttempts ?? 0) + 1;
+      if (attempts > 5) {
+        await reportFailure(`Não consegui avançar da lista de empresas após ${attempts} tentativas — parando por segurança. Verificar manualmente.`);
+        return;
+      }
+      await setRunFlag({ listaContribuintesAttempts: attempts });
       await handleListaContribuintes(run);
       return; // navegação leva pra mainAbasContribuinte; script reinjeta lá.
     }
