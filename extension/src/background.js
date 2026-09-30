@@ -227,16 +227,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "REAL_CLICK": {
-          // Clique sintético (dispatchEvent) e chamar chamaAplicacao(...) direto no
-          // mundo principal da página falharam silenciosamente a partir da 2ª
-          // procuração em diante (confirmado ao vivo, 2026-09-30) — só um clique
-          // humano de verdade funcionava. chrome.debugger dispara um clique via CDP
-          // que o navegador trata como gesto real de usuário, ao contrário de
-          // qualquer clique disparado por JS.
-          const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*", active: true });
-          if (!tab) return sendResponse({ ok: false, error: "ABA_SSACERT_NAO_ENCONTRADA" });
+          // Clique sintético (dispatchEvent) e chamar funções globais direto no mundo
+          // principal falham silenciosamente pra cliques que dependem de navegação
+          // real de página (entrar numa empresa, entrar numa procuração) — confirmado
+          // ao vivo, 2026-09-30: só um clique com "ativação de usuário" real navega de
+          // forma confiável. chrome.debugger dispara um clique via CDP que conta como
+          // gesto real. Usa a aba que mandou a mensagem (sender.tab), não uma busca por
+          // URL — funciona tanto em ssacert.fazenda quanto em fisco-facil.
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
           try {
-            await dispatchRealClick(tab.id, message.x, message.y);
+            await dispatchRealClick(sender.tab.id, message.x, message.y);
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, error: `REAL_CLICK_FALHOU: ${error.message} (se o DevTools estiver aberto nessa aba, chrome.debugger não consegue anexar — feche o F12 e tente de novo)` });

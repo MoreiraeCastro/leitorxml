@@ -93,12 +93,7 @@ async function enterProcuracao(grupo, posicao) {
   if (!match) {
     throw new Error(`PROCURACAO_NAO_ENCONTRADA: grupo=${grupo} posicao=${posicao} (encontrados: ${links.length})`);
   }
-  match.element.scrollIntoView({ block: "center" });
-  await new Promise((resolve) => setTimeout(resolve, 150)); // deixa o scroll assentar antes de medir a posição na tela
-  const rect = match.element.getBoundingClientRect();
-  const x = Math.round(rect.left + rect.width / 2);
-  const y = Math.round(rect.top + rect.height / 2);
-  await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
+  await realNavigationClick(match.element);
   // Navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí.
 }
 

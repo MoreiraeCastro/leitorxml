@@ -67,6 +67,26 @@ function realClick(el) {
   }
 }
 
+/**
+ * Clique que deve resultar em NAVEGAÇÃO real de página (não só AJAX) — usa
+ * chrome.debugger via background (mensagem REAL_CLICK), não dispatchEvent.
+ * Confirmado ao vivo (2026-09-30): cliques que só disparam AJAX no lugar
+ * (ex.: botão "Filtrar") funcionam bem com `realClick()` normal, mas cliques
+ * que dependem de `form.submit()`/redirect pra trocar de página (entrar numa
+ * empresa, entrar numa procuração) falham silenciosamente com clique
+ * sintético a partir da 2ª tentativa em diante — só um clique com "ativação
+ * de usuário" real (humano, ou via CDP) navega de forma confiável.
+ */
+async function realNavigationClick(el) {
+  el.scrollIntoView({ block: "center" });
+  await new Promise((resolve) => setTimeout(resolve, 150)); // deixa o scroll assentar antes de medir a posição na tela
+  const rect = el.getBoundingClientRect();
+  const x = Math.round(rect.left + rect.width / 2);
+  const y = Math.round(rect.top + rect.height / 2);
+  const response = await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
+  if (!response?.ok) throw new Error(response?.error ?? "REAL_CLICK_FALHOU");
+}
+
 /** Define o valor de um input controlado (React/PrimeFaces-friendly): seta via setter nativo e dispara input+change. */
 function setInputValue(input, value) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;

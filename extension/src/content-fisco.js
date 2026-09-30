@@ -110,10 +110,12 @@ async function handleListaContribuintes(run) {
   }
   // A tabela é recriada via AJAX após a busca — o PrimeFaces religa os
   // listeners de seleção de linha na tabela nova um instante depois do
-  // #loading sumir, não no mesmo tick. Clicar cedo demais não faz nada
-  // (sem erro, sem navegação) — daí o "fica parado" sem nunca reportar falha.
+  // #loading sumir, não no mesmo tick.
   await new Promise((resolve) => setTimeout(resolve, 500));
-  realClick(row);
+  // Clique real (chrome.debugger), não sintético — entrar na empresa depende de
+  // navegação de página de verdade, que exige "ativação de usuário" (confirmado
+  // ao vivo, 2026-09-30: mesmo bug do clique pra entrar em procuração).
+  await realNavigationClick(row);
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
 }
 
@@ -146,7 +148,8 @@ function readHeaderCnpj() {
 
 async function openExtractionForm() {
   const link = document.getElementById("frmMenuLateral:fieldExtracaoID") ?? findByExactText("a", "Extração de documentos fiscais");
-  realClick(link);
+  if (!link) throw new Error("LINK_EXTRACAO_NAO_ENCONTRADO");
+  await realNavigationClick(link);
   await waitFor(() => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe"), {
     timeoutMs: 15000,
     label: "abrir formulário de extração",
@@ -239,7 +242,7 @@ async function fillAndSubmitExtractionForm(run) {
 
   const confirmar = document.getElementById("FrmSolicitarExtracaoDfe:submitPesquisa");
   if (!confirmar) throw new Error("BOTAO_CONFIRMAR_EXTRACAO_NAO_ENCONTRADO");
-  realClick(confirmar);
+  await realNavigationClick(confirmar);
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação de volta após confirmar solicitação de extração" });
 }
 
