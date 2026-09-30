@@ -12,6 +12,31 @@ const HOME_URL = "https://ssacert.fazenda.rj.gov.br/ssa/certificadoWeb";
 // rodar toda vez que o service worker acorda (não persiste sozinho).
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" }).catch(() => {});
 
+/**
+ * "Voltar" no histórico, mas garantindo carregamento real da página — às
+ * vezes o Chrome restaura do bfcache em vez de recarregar de verdade, e
+ * scripts do próprio Fisco Fácil que só rodam num load fresco (ex.: a
+ * função `janela`, usada por `chamaAplicacao`) ficam indefinidos, quebrando
+ * o próximo clique (confirmado ao vivo, 2026-09-30: "ReferenceError: janela
+ * is not defined"). `pageshow` com `persisted:true` é o sinal padrão de
+ * restauração via bfcache — força reload nesse caso.
+ */
+async function goBackWithFreshLoad(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      window.addEventListener(
+        "pageshow",
+        (event) => {
+          if (event.persisted) location.reload();
+        },
+        { once: true },
+      );
+      history.back();
+    },
+  });
+}
+
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
@@ -220,7 +245,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor } });
           const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
-          if (tab) await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => history.back() });
+          if (tab) await goBackWithFreshLoad(tab.id);
           sendResponse({ ok: true });
           break;
         }
@@ -266,7 +291,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           await setActiveRun({ ...run, sweepCursor: nextCursor });
           const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
-          if (tab) await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => history.back() });
+          if (tab) await goBackWithFreshLoad(tab.id);
           sendResponse({ ok: true });
           break;
         }
