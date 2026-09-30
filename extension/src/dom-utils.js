@@ -78,6 +78,16 @@ function realClick(el) {
  * sempre funcionou em todos os testes).
  */
 async function realNavigationClick(el) {
+  // Mesma blindagem de `realClick()`: se o clique não disparar o handler
+  // AJAX esperado do jeito certo, o navegador pode cair no submit nativo do
+  // form (POST/GET pra mesma URL) em vez da navegação real esperada — visto
+  // ao vivo em 2026-09-30 na lista de empresas: a página recarregava e
+  // voltava pra lista repetidamente (6x, até o guard de segurança travar),
+  // sem nenhum erro, sem nunca chegar a `mainAbasContribuinte`. Clique real
+  // (CDP) conta como gesto de usuário de verdade e ativa esse fallback nativo
+  // de um jeito que o clique sintético de antes não ativava.
+  const form = el.closest("form");
+  if (form) form.addEventListener("submit", (event) => event.preventDefault(), { capture: true, once: true });
   // behavior:"instant" evita rolagem suave — se a página tiver scroll-behavior:
   // smooth (comum em CSS moderno) e a gente medir a posição antes da rolagem
   // terminar, o clique via CDP acerta coordenadas erradas sem erro nenhum.
