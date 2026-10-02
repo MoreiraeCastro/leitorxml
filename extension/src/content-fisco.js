@@ -314,22 +314,29 @@ async function fillAndSubmitExtractionForm(run) {
   await realNavigationClick(confirmar);
   note("clicou Confirmar solicitação");
 
-  // O site NÃO navega ao confirmar: mostra o modal "Solicitação de Extração de DFe — O resultado
-  // será apresentado na aba Solicitações" com um botão "Fechar" (confirmado ao vivo, 2026-10-02).
-  const findVisibleButton = findVisibleClickableByText;
-  const fechar = await waitFor(() => findVisibleButton("Fechar"), { timeoutMs: 15000, label: 'modal "Solicitação de Extração de DFe" (botão Fechar) aparecer' });
-  // Dois modais vistos ao vivo (2026-10-02), ambos só com "Fechar": sucesso ("O resultado será
-  // apresentado na aba Solicitações") e duplicado ("Já foi realizada solicitação semelhante em
-  // 10/09/2026. Consulte a solicitação NF-e - Emitente - Período: ..."). Qualquer modal de aviso é
-  // fechado e o fluxo segue; só falha se o texto indicar erro de verdade.
-  let dialog = fechar.closest(".ui-dialog, .modal, [role='dialog']");
-  for (let node = fechar, levels = 0; !dialog && node.parentElement && levels < 6; levels++) {
-    node = node.parentElement;
-    if (node.textContent.trim().length > 40) dialog = node; // 1º ancestral com texto além do próprio "Fechar"
-  }
-  const modalText = (dialog?.textContent ?? "").replace(/\s+/g, " ").trim();
-  note(`modal da solicitação: "${modalText.slice(0, 200)}"`);
-  if (/erro|inv[aá]lid|n[aã]o foi poss[ií]vel|falha|indispon/i.test(modalText)) {
+  // O site NÃO navega ao confirmar: abre um modal PrimeFaces (`.ui-dialog`), visto ao vivo
+  // (2026-10-02) em dois casos — sucesso ("Solicitação de Extração de DFe — O resultado será
+  // apresentado na aba Solicitações") e duplicado ("Solicitar Extração de DF-e — Já foi realizada
+  // solicitação semelhante em 10/09/2026. Consulte a solicitação NF-e - Emitente - Período: ...").
+  // A mensagem e o botão azul "Fechar" NÃO estão no DOM principal (`.ui-dialog-content` tem
+  // textContent vazio — provavelmente num iframe), então não dá pra achar o "Fechar" por texto.
+  // O "×" da barra de título está no documento principal e fecha o mesmo diálogo.
+  const findOpenDialog = () => [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetWidth > 0 && d.offsetHeight > 0);
+  const dialog = await waitFor(findOpenDialog, { timeoutMs: 15000, label: "modal (.ui-dialog) da solicitação de extração aparecer" });
+  const readDialogText = () => {
+    let iframeText = "";
+    try {
+      iframeText = dialog.querySelector("iframe")?.contentDocument?.body?.textContent ?? "";
+    } catch {}
+    return `${dialog.textContent} ${iframeText}`.replace(/\s+/g, " ").trim();
+  };
+  const titleText = dialog.querySelector(".ui-dialog-title")?.textContent.trim() ?? "";
+  // A mensagem pode carregar um instante depois do diálogo abrir.
+  await waitFor(() => readDialogText().length > titleText.length + 15, { timeoutMs: 3000, label: "mensagem do modal carregar" }).catch(() => {});
+  const modalText = readDialogText();
+  note(`modal da solicitação: "${modalText.slice(0, 220)}"`);
+  // Qualquer modal de aviso é fechado e o fluxo segue; só falha se o texto indicar erro de verdade.
+  if (/erro|inv[aá]lid|n[aã]o foi poss[ií]vel|falha|indispon/i.test(modalText.replace(titleText, ""))) {
     throw new Error(`MODAL_DE_ERRO_NA_SOLICITACAO: ${modalText.slice(0, 300)}`);
   }
   const solicitacaoExistente = modalText.match(/Consulte a solicita[cç][aã]o (.+?) no hist[oó]rico/i)?.[1];
@@ -339,9 +346,12 @@ async function fillAndSubmitExtractionForm(run) {
   await setRunFlag({ formSubmitted: true });
   await reportStatus("SOLICITADO", solicitacaoExistente ? { sefazReferencia: solicitacaoExistente.slice(0, 120) } : {});
 
-  await realNavigationClick(fechar);
+  const fecharX = dialog.querySelector(".ui-dialog-titlebar-close, a.ui-dialog-titlebar-icon");
+  if (!fecharX) throw new Error("BOTAO_FECHAR_DO_MODAL_NAO_ENCONTRADO (× da barra de título)");
+  await realNavigationClick(fecharX);
+  await waitFor(() => !findOpenDialog(), { timeoutMs: 5000, label: "modal da solicitação fechar" });
   await waitForAjaxIdle({ label: "AJAX ao fechar o modal da solicitação" });
-  const voltar = findVisibleButton("Voltar");
+  const voltar = findVisibleClickableByText("Voltar");
   if (!voltar) throw new Error("BOTAO_VOLTAR_NAO_ENCONTRADO depois de fechar o modal da solicitação");
   await realNavigationClick(voltar);
   // Navega pra mainAbasContribuinte — content-fisco.js reinjeta lá e segue pra aba Solicitações.
