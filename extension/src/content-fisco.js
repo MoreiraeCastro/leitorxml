@@ -266,11 +266,22 @@ async function selectParticipante(label) {
   await realNavigationClick(radio ?? target);
 }
 
+/** Estado de todos os campos do formulário de extração (id, tipo, valor, marcado, tamanho visível) — anexado às falhas pra diagnosticar sem precisar do HTML. */
+function describeExtractionForm() {
+  const form = document.getElementById("FrmSolicitarExtracaoDfe");
+  if (!form) return "sem FrmSolicitarExtracaoDfe";
+  return [...form.querySelectorAll("input,select")]
+    .map((el) => `${el.tagName.toLowerCase()}${el.type ? `:${el.type}` : ""}#${el.id || el.name}=${String(el.value).slice(0, 20)}${el.checked ? " ✓" : ""} ${el.offsetWidth}x${el.offsetHeight}`)
+    .join(" | ");
+}
+
 async function fillAndSubmitExtractionForm(run) {
   const mesesRadio = document.getElementById("FrmSolicitarExtracaoDfe:tpPesquisaDM:1");
   if (!mesesRadio.checked) {
     await realNavigationClick(mesesRadio);
+    note("clicou Meses");
     await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000, label: "campos de data aparecerem após marcar Meses" });
+    note("campos de data apareceram");
   }
   // Fecha o calendário popup que abre ao marcar "Meses", e seta o valor direto —
   // não navega o datepicker por clique. Formato a confirmar na PoC (ver formatCompetencia).
@@ -278,6 +289,7 @@ async function fillAndSubmitExtractionForm(run) {
   const competencia = formatCompetencia(run.competenciaAno, run.competenciaMes);
   setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), competencia);
   setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtFimDia_input"), competencia);
+  note(`datas setadas para ${competencia}`);
 
   const docRadio = document.querySelector(`input[name="FrmSolicitarExtracaoDfe:tpDocumento"][value="${DOC_VALUE[run.tipoDocumento]}"]`);
   if (!docRadio) throw new Error(`OPCAO_DOCUMENTO_NAO_ENCONTRADA: ${run.tipoDocumento}`);
@@ -363,7 +375,8 @@ async function fillAndSubmitExtractionForm(run) {
       return;
     }
   } catch (error) {
-    await reportFailure(error.message);
+    const formSnapshot = location.pathname.includes("solicitacaoExtracaoDfe") ? ` [formulário: ${describeExtractionForm()}]` : "";
+    await reportFailure(error.message + formSnapshot);
   }
 })();
 

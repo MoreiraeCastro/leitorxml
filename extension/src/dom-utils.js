@@ -297,7 +297,7 @@ async function realNavigationClick(el) {
   await clearLoadingOverlayCovering();
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) {
-    throw new Error(`REAL_CLICK_ALVO_SEM_TAMANHO: elemento com rect ${JSON.stringify(rect)} — provavelmente invisível ou fora da tela`);
+    throw new Error(`REAL_CLICK_ALVO_SEM_TAMANHO: ${el.tagName}#${el.id}.${String(el.className).slice(0, 60)} com rect ${JSON.stringify(rect)} — provavelmente invisível ou fora da tela`);
   }
   const x = Math.round(rect.left + rect.width / 2);
   const y = Math.round(rect.top + rect.height / 2);
