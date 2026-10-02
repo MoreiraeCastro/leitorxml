@@ -265,7 +265,20 @@ function realClick(el) {
  * card "AUTO Fisco Fácil" em `content-home.js` (esse, `realClick()` normal
  * sempre funcionou em todos os testes).
  */
+/**
+ * Rádio/checkbox do PrimeFaces: o <input> real fica escondido (ui-helper-hidden-accessible)
+ * e o que aparece e recebe o clique é uma caixa desenhada por cima
+ * (`.ui-radiobutton-box` / `.ui-chkbox-box`) — clicar nas coordenadas do input cai na caixa
+ * (visto ao vivo, 2026-10-02: REAL_CLICK_ALVO_COBERTO no rádio "Meses"). Devolve o alvo visível.
+ */
+function visibleClickTarget(el) {
+  if (!(el instanceof HTMLInputElement) || !["radio", "checkbox"].includes(el.type)) return el;
+  const box = el.closest(".ui-radiobutton, .ui-chkbox")?.querySelector(".ui-radiobutton-box, .ui-chkbox-box");
+  return box ?? (el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null) ?? el;
+}
+
 async function realNavigationClick(el) {
+  el = visibleClickTarget(el);
   // Mesma blindagem de `realClick()`: se o clique não disparar o handler
   // AJAX esperado do jeito certo, o navegador pode cair no submit nativo do
   // form (POST/GET pra mesma URL) em vez da navegação real esperada — visto
