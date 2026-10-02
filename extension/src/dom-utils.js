@@ -22,6 +22,9 @@ const executionTrail = [];
 function note(step) {
   executionTrail.push(step);
   if (executionTrail.length > 20) executionTrail.shift();
+  // Guarda o último passo fora da página: o vigia do service worker usa isto pra dizer ONDE a corrida
+  // parou quando ela trava sem reportar nada (o rastro em memória some junto com a página).
+  chrome.storage.session.set({ lastNote: { step, path: location.pathname, at: Date.now() } }).catch(() => {});
 }
 
 /** Monta o texto de diagnóstico (rastro de passos + erros JS da página) pra anexar numa mensagem de falha. */

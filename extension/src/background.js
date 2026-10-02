@@ -196,6 +196,26 @@ async function clearActiveRun() {
   await chrome.storage.session.remove("activeRun");
 }
 
+// Vigia do service worker: uma corrida por-tarefa leva ~30s; passando de RUN_STALL_MS sem terminar,
+// está parada (visto ao vivo, 2026-10-02: tarefas presas em AUTENTICANDO sem nenhum erro). Diferente
+// do `runExpired` dos content scripts, não depende de uma página recarregar pra disparar.
+const RUN_STALL_MS = 3 * 60 * 1000;
+chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== "run-watchdog") return;
+  const run = await getActiveRun();
+  if (!run || run.mode === "SWEEP" || !run.taskId || typeof run.startedAt !== "number") return;
+  if (Date.now() - run.startedAt < RUN_STALL_MS) return;
+  if (run.formSubmitted) {
+    // A solicitação já foi criada e registrada como SOLICITADO — só o encadeamento parou. Não derruba a tarefa.
+    await clearActiveRun();
+    return;
+  }
+  const { lastNote } = await chrome.storage.session.get("lastNote");
+  const onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
+  await reportFalha(run.taskId, `RUN_TRAVADA: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar nem reportar falha; ${onde}`).catch(() => {});
+});
+
 /** Busca a próxima tarefa e prepara a corrida: decide se dá pra continuar na mesma empresa (economiza navegação) ou se precisa voltar pra Página Principal e reentrar por procuração. */
 // Quantas tarefas seguidas um único clique em "Buscar próxima tarefa" processa. Cada uma cria
 // uma solicitação REAL na SEFAZ — 3 = uma empresa inteira (NF-e Dest., NF-e Emit., NFC-e Emit.).
