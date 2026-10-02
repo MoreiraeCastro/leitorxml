@@ -28,14 +28,14 @@ export async function resolveAccessContext(
   return { type: "PROCURACAO", grupo: establishment.procuracaoGrupo, posicao: establishment.procuracaoPosicao };
 }
 
-/** Compare-and-swap atômico: só trava se estiver livre ou com trava expirada. Evita corrida entre chamadas concorrentes de "próxima tarefa". */
+/** Compare-and-swap atômico: só trava se estiver livre, com trava expirada, ou já travada pelo MESMO usuário (a extensão encadeia as 3 combinações da empresa sem soltar a trava). Evita corrida entre usuários/chamadas concorrentes de "próxima tarefa". */
 export async function acquireEstablishmentLock(db: SupabaseClient, establishmentId: string, userId: string, now: Date = new Date()) {
   const staleBefore = new Date(now.getTime() - ESTABLISHMENT_LOCK_TTL_MS).toISOString();
   const { data, error } = await db
     .from("xml_watch_establishments")
     .update({ locked_by_user_id: userId, locked_at: now.toISOString() })
     .eq("id", establishmentId)
-    .or(`locked_at.is.null,locked_at.lt.${staleBefore}`)
+    .or(`locked_at.is.null,locked_at.lt.${staleBefore},locked_by_user_id.eq.${userId}`)
     .select("id")
     .maybeSingle();
   if (error) throw new Error("ESTABLISHMENT_LOCK_FAILED");

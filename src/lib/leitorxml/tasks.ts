@@ -125,24 +125,20 @@ export async function escalateStaleProcessing(db: SupabaseClient, options: { old
   return { escalated: data?.length ?? 0 };
 }
 
-/**
- * Reivindica a próxima tarefa elegível para um colaborador: percorre
- * candidatas (AGENDADA/NA_FILA) por competência mais antiga primeiro,
- * tentando travar o estabelecimento (uma sessão de navegador por empresa).
- * A primeira que conseguir travar vira AUTENTICANDO e é retornada.
- */
-export async function claimNextTask(db: SupabaseClient, userId: string, now: Date = new Date()) {
-  const { data: candidates, error } = await db
-    .from("xml_collection_tasks")
-    .select("id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,tentativas,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)")
-    .in("status", ["AGENDADA", "NA_FILA"])
-    .order("competencia_ano", { ascending: true })
-    .order("competencia_mes", { ascending: true })
-    .limit(50);
-  if (error) throw new Error("NEXT_TASK_LOOKUP_FAILED");
+const CANDIDATE_COLUMNS =
+  "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,tentativas,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
 
+async function fetchClaimCandidates(db: SupabaseClient, onlyEstablishmentId?: string) {
+  let query = db.from("xml_collection_tasks").select(CANDIDATE_COLUMNS).in("status", ["AGENDADA", "NA_FILA"]);
+  if (onlyEstablishmentId) query = query.eq("establishment_id", onlyEstablishmentId);
+  const { data, error } = await query.order("competencia_ano", { ascending: true }).order("competencia_mes", { ascending: true }).limit(50);
+  if (error) throw new Error("NEXT_TASK_LOOKUP_FAILED");
+  return data ?? [];
+}
+
+async function tryClaimFromCandidates(db: SupabaseClient, userId: string, now: Date, candidates: Awaited<ReturnType<typeof fetchClaimCandidates>>) {
   const attempted = new Set<string>();
-  for (const candidate of candidates ?? []) {
+  for (const candidate of candidates) {
     if (attempted.has(candidate.establishment_id)) continue;
     attempted.add(candidate.establishment_id);
     const locked = await acquireEstablishmentLock(db, candidate.establishment_id, userId, now);
@@ -169,4 +165,22 @@ export async function claimNextTask(db: SupabaseClient, userId: string, now: Dat
     return { task: claimed, establishment, accessContext };
   }
   return null;
+}
+
+/**
+ * Reivindica a próxima tarefa elegível para um colaborador: percorre
+ * candidatas (AGENDADA/NA_FILA) por competência mais antiga primeiro,
+ * tentando travar o estabelecimento (uma sessão de navegador por empresa).
+ * A primeira que conseguir travar vira AUTENTICANDO e é retornada.
+ *
+ * Com `preferEstablishmentId`, tenta antes as tarefas pendentes dessa empresa
+ * (a extensão já está dentro dela: pede as 3 combinações em sequência, sem
+ * voltar ao modal de procurações) e só então cai na fila geral.
+ */
+export async function claimNextTask(db: SupabaseClient, userId: string, now: Date = new Date(), options: { preferEstablishmentId?: string } = {}) {
+  if (options.preferEstablishmentId) {
+    const sameCompany = await tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db, options.preferEstablishmentId));
+    if (sameCompany) return sameCompany;
+  }
+  return tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db));
 }

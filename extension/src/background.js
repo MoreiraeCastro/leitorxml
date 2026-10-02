@@ -201,9 +201,18 @@ async function clearActiveRun() {
 // uma solicitação REAL na SEFAZ — 3 = uma empresa inteira (NF-e Dest., NF-e Emit., NFC-e Emit.).
 const MAX_CHAIN_TASKS = 3;
 
-async function claimNextTaskAndPrepare(chainCount = 1) {
+/** Fim do lote: limpa a corrida e volta a aba pra Página Principal do portal (onde fica o card "AUTO Fisco Fácil" / modal de procurações). */
+async function finishBatchAndReturnHome(tabId) {
+  await clearActiveRun();
+  if (tabId != null) await chrome.tabs.update(tabId, { url: HOME_URL }).catch(() => {});
+}
+
+async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = null) {
   const previousRun = await getActiveRun();
-  const response = await apiFetch("/api/leitorxml/extensao/proxima-tarefa");
+  // Ao encadear, prefere as tarefas pendentes da empresa em que já estamos (as 3 combinações em
+  // sequência, sem voltar ao modal de procurações a cada solicitação).
+  const query = preferEstablishmentId ? `?establishmentId=${encodeURIComponent(preferEstablishmentId)}` : "";
+  const response = await apiFetch(`/api/leitorxml/extensao/proxima-tarefa${query}`);
   const { task, establishment, accessContext } = await response.json();
   if (!task) {
     await clearActiveRun();
@@ -503,11 +512,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!previous) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
           const chainCount = previous.chainCount ?? 1;
           if (chainCount >= MAX_CHAIN_TASKS) {
-            await clearActiveRun();
+            await finishBatchAndReturnHome(sender.tab?.id);
             sendResponse({ ok: true, done: true, reason: "LIMITE_DO_LOTE" });
             break;
           }
-          const run = await claimNextTaskAndPrepare(chainCount + 1);
+          const run = await claimNextTaskAndPrepare(chainCount + 1, previous.establishment?.id ?? null);
+          if (!run) await finishBatchAndReturnHome(sender.tab?.id);
           sendResponse({ ok: true, done: !run, run });
           break;
         }
