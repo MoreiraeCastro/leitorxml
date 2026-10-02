@@ -282,6 +282,22 @@ function describeExtractionForm() {
     );
 }
 
+/** Rótulo visível de um rádio (label[for] ou o label da mesma célula). */
+function radioLabel(radio) {
+  if (!radio) return null;
+  const label = (radio.id && document.querySelector(`label[for="${CSS.escape(radio.id)}"]`)) || radio.closest("td")?.querySelector("label");
+  return label?.textContent.trim() ?? null;
+}
+
+/** O que o formulário de extração está de fato pedindo agora (documento, participante, período). */
+function readSelectedExtractionRequest() {
+  const documento = radioLabel(document.querySelector('input[name="FrmSolicitarExtracaoDfe:tpDocumento"]:checked'));
+  const participante = radioLabel(document.querySelector('input[name="FrmSolicitarExtracaoDfe:tpParticipante"]:checked'));
+  const inicio = document.getElementById("FrmSolicitarExtracaoDfe:dtInicioPeriodo_input")?.value.trim() ?? "";
+  const fim = document.getElementById("FrmSolicitarExtracaoDfe:dtFimPeriodo_input")?.value.trim() ?? "";
+  return { documento, participante, inicio, fim, resumo: `${documento ?? "documento não marcado"} - ${participante ?? "participante não marcado"} - ${inicio} a ${fim}` };
+}
+
 async function fillAndSubmitExtractionForm(run) {
   const mesesRadio = document.getElementById("FrmSolicitarExtracaoDfe:tpPesquisaDM:1");
   if (!mesesRadio.checked) {
@@ -308,6 +324,16 @@ async function fillAndSubmitExtractionForm(run) {
   await waitForAjaxIdle({ label: "AJAX popular PARTICIPA DO DOCUMENTO COMO" });
 
   await selectParticipante(PARTICIPANTE_LABEL[run.papel]);
+
+  // NUNCA confirma sem conferir o que está de fato marcado: se a seleção de documento/participante/
+  // data não "pegar", a solicitação sairia com o tipo errado e a tarefa ficaria SOLICITADO mesmo assim
+  // (suspeita ao vivo, 2026-10-02: lote com NFC-e Emitente, mas só NF-e Destinatário apareceu no site).
+  const enviado = readSelectedExtractionRequest();
+  note(`formulário antes de confirmar: ${enviado.resumo}`);
+  const esperadoDoc = run.tipoDocumento === "NFCE" ? "NFC-e" : "NF-e";
+  if (enviado.documento !== esperadoDoc || enviado.participante !== PARTICIPANTE_LABEL[run.papel] || enviado.inicio !== competencia || enviado.fim !== competencia) {
+    throw new Error(`FORMULARIO_DIVERGENTE: tarefa pede ${esperadoDoc} - ${PARTICIPANTE_LABEL[run.papel]} - ${competencia}, formulário está com ${enviado.resumo}`);
+  }
 
   const confirmar = document.getElementById("FrmSolicitarExtracaoDfe:submitPesquisa");
   if (!confirmar) throw new Error("BOTAO_CONFIRMAR_EXTRACAO_NAO_ENCONTRADO");
@@ -344,7 +370,8 @@ async function fillAndSubmitExtractionForm(run) {
   // Marca AGORA, antes de qualquer navegação: o script desta página é destruído quando o navegador
   // sai dela, então qualquer coisa depois do clique em "Voltar" nunca rodaria.
   await setRunFlag({ formSubmitted: true });
-  await reportStatus("SOLICITADO", solicitacaoExistente ? { sefazReferencia: solicitacaoExistente.slice(0, 120) } : {});
+  // Referência gravada na tarefa = auditoria: a solicitação já existente citada pelo site, ou o que o formulário de fato enviou.
+  await reportStatus("SOLICITADO", { sefazReferencia: (solicitacaoExistente ?? `Enviado: ${enviado.resumo}`).slice(0, 120) });
 
   const fecharX = dialog.querySelector(".ui-dialog-titlebar-close, a.ui-dialog-titlebar-icon");
   if (!fecharX) throw new Error("BOTAO_FECHAR_DO_MODAL_NAO_ENCONTRADO (× da barra de título)");
