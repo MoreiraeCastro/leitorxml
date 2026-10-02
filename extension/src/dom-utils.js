@@ -76,7 +76,7 @@ function watchLoadingOverlay() {
   let seen = false;
   const observer = el
     ? new MutationObserver(() => {
-        if (!el.classList.contains("hidden")) seen = true;
+        if (isLoadingOverlayVisible()) seen = true;
       })
     : null;
   observer?.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
@@ -139,9 +139,7 @@ async function waitForAjaxIdle(options = {}) {
   // antes da resposta (sempre a lista inteira). Também espera as XHRs registradas por
   // `ensurePageGlobals` (background.js) terminarem.
   const isIdle = () => {
-    const el = document.getElementById("loading");
-    const hidden = !el || el.classList.contains("hidden");
-    return hidden && !hasPendingXhr();
+    return !isLoadingOverlayVisible() && !hasPendingXhr();
   };
   const waitOptions = { timeoutMs: 30000, ...options };
   await waitFor(isIdle, waitOptions);
@@ -158,8 +156,7 @@ async function waitForAjaxIdle(options = {}) {
  * das funções do site pra diagnóstico.
  */
 async function clearLoadingOverlayCovering() {
-  const overlay = document.getElementById("loading");
-  const isShown = () => !!overlay && !overlay.classList.contains("hidden");
+  const isShown = isLoadingOverlayVisible;
   if (!isShown()) return;
   try {
     await waitFor(() => !isShown(), { timeoutMs: 6000, label: "overlay #loading sumir antes do clique" });
@@ -174,6 +171,27 @@ async function clearLoadingOverlayCovering() {
     const info = await chrome.runtime.sendMessage({ type: "DESCRIBE_LOADING" });
     throw new Error(`OVERLAY_LOADING_PRESO: ${JSON.stringify(info?.result)}`);
   }
+}
+
+/**
+ * Visibilidade REAL do overlay #loading (estilo computado), não a classe "hidden":
+ * ao vivo (2026-10-02) o overlay estava visível e cobrindo a tela enquanto a checagem
+ * por classe dizia "escondido" — por isso "loading apareceu: não" em todos os testes e
+ * o waitForAjaxIdle nunca esperava de verdade.
+ */
+function isLoadingOverlayVisible() {
+  const el = document.getElementById("loading");
+  if (!el) return false;
+  const style = getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && el.offsetWidth > 0 && el.offsetHeight > 0;
+}
+
+/** Descrição curta do overlay (classe, display, tamanho) pra diagnóstico. */
+function describeLoadingOverlay() {
+  const el = document.getElementById("loading");
+  if (!el) return "sem #loading";
+  const style = getComputedStyle(el);
+  return `class="${el.className}" display=${style.display} visibility=${style.visibility} opacity=${style.opacity} ${el.offsetWidth}x${el.offsetHeight}`;
 }
 
 /** Verdadeiro se alguma XHR do site registrada (ver `ensurePageGlobals`) ainda não terminou. */
@@ -254,7 +272,7 @@ async function realNavigationClick(el) {
   const topmost = document.elementFromPoint(x, y);
   if (!topmost || !(el === topmost || el.contains(topmost))) {
     const describe = (node) => (node ? `${node.tagName}${node.id ? `#${node.id}` : ""}.${String(node.className ?? "").slice(0, 40)}` : "nada (fora da janela)");
-    throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}]`);
+    throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}] [overlay: ${describeLoadingOverlay()}]`);
   }
   const response = await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
   if (!response?.ok) throw new Error(response?.error ?? "REAL_CLICK_FALHOU");
