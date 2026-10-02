@@ -22,7 +22,7 @@ async function reportStatus(status, extra = {}) {
   await chrome.runtime.sendMessage({ type: "REPORT_STATUS", status, ...extra });
 }
 async function reportFailure(motivo) {
-  await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo });
+  await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: motivo + describeDiagnostics() });
 }
 
 /** Formata como visto na tela após escolher "Meses" (ex.: "08/2026"). Ponto a validar na PoC — pode ser que o servidor espere outro formato. */
@@ -83,15 +83,23 @@ async function searchContribuinte(cnpj) {
   // InputMask — digita dígito por dígito via eventos de teclado, não seta o valor
   // mascarado direto (a lib insere a pontuação sozinha à medida que "digita").
   await typeIntoMaskedInput(searchInput, cnpj);
+  note(`digitou ${cnpj} no campo (confirmado)`);
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");
   await realNavigationClick(filtrarButton);
+  note("clicou Filtrar");
   await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
+  note("AJAX do Filtrar terminou (loading escondeu)");
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
-  if (body?.querySelector(".ui-datatable-empty-message")) return null;
-  return body?.querySelector("tr") ?? null;
+  if (body?.querySelector(".ui-datatable-empty-message")) {
+    note("resultado: lista vazia");
+    return null;
+  }
+  const row = body?.querySelector("tr") ?? null;
+  note(`resultado: ${body?.querySelectorAll("tr").length ?? 0} linha(s), 1ª = ${row ? readRowCnpj(row) : "nenhuma"}`);
+  return row;
 }
 
 function readRowCnpj(row) {
@@ -138,6 +146,7 @@ async function handleListaContribuintes(run) {
   // pelo menos uma vez ao vivo (clique via CDP sem nenhum efeito, mesmo com
   // coordenadas "válidas" — rect não-zero, mas fora do viewport).
   await realNavigationClick(row.querySelector("td") ?? row);
+  note("clicou na linha da empresa");
   await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
 }
 
@@ -281,6 +290,11 @@ async function fillAndSubmitExtractionForm(run) {
 
   const run = await getActiveRun();
   if (!run) return;
+
+  if (runExpired(run)) {
+    await reportFailure(`RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`);
+    return;
+  }
 
   if (run.mode === "SWEEP") {
     // Varredura completa: só age na lista de empresas — não passa pelo formulário/acompanhamento (isso é trabalho da Fase 2, "Buscar próxima tarefa").

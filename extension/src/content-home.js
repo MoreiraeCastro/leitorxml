@@ -109,6 +109,12 @@ async function enterProcuracao(grupo, posicao) {
   const run = await getActiveRun();
   if (!run || run.step !== "NAVIGATE_HOME") return;
 
+  if (runExpired(run)) {
+    const motivo = `RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`;
+    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: motivo + describeDiagnostics() });
+    return;
+  }
+
   if (run.mode === "SWEEP") {
     // Varredura completa: testa CADA procuração do modal (todos os grupos), sem alvo de CNPJ específico.
     try {
@@ -126,8 +132,9 @@ async function enterProcuracao(grupo, posicao) {
       }
       const current = queue[cursor];
       await enterProcuracao(current.grupo, current.posicao);
+      note(`entrou na procuração grupo=${current.grupo} posicao=${current.posicao}`);
     } catch (error) {
-      await chrome.runtime.sendMessage({ type: "REPORT_SWEEP_FAILURE", motivo: error.message });
+      await chrome.runtime.sendMessage({ type: "REPORT_SWEEP_FAILURE", motivo: error.message + describeDiagnostics() });
     }
     return;
   }
@@ -162,7 +169,8 @@ async function enterProcuracao(grupo, posicao) {
     }
     const current = discovery.queue[discovery.cursor];
     await enterProcuracao(current.grupo, current.posicao);
+    note(`entrou na procuração grupo=${current.grupo} posicao=${current.posicao} (descoberta)`);
   } catch (error) {
-    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: error.message });
+    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: error.message + describeDiagnostics() });
   }
 })();

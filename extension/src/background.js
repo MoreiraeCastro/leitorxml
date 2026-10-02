@@ -149,6 +149,14 @@ async function claimNextTaskAndPrepare() {
     // Se já estamos na mesma empresa (acabamos de terminar outro combo dela), pula direto pro formulário —
     // sem sair da sessão, sem reentrar por procuração. Só navega do zero se for empresa nova.
     step: sameEstablishment ? "ON_ESTABLISHMENT" : "NAVIGATE_HOME",
+    // Vigia de corrida travada: se a página recarregar no meio de uma espera
+    // (`waitFor`), a promise pendente some junto com o contexto antigo — nada
+    // é reportado, nem sucesso nem falha, e a tarefa fica presa em
+    // AUTENTICANDO pra sempre (visto ao vivo várias vezes, 2026-09-30). Cada
+    // content script confere isso ao carregar (ver `checkRunNotExpired` em
+    // dom-utils.js) e falha alto se a corrida já passou do tempo esperado,
+    // em vez de ficar presa silenciosamente até alguém notar e resetar no banco.
+    startedAt: Date.now(),
   };
   await setActiveRun(run);
 
@@ -172,7 +180,7 @@ async function claimNextTaskAndPrepare() {
  * as tarefas já criadas, uma de cada vez).
  */
 async function startSweep() {
-  const run = { mode: "SWEEP", step: "NAVIGATE_HOME" };
+  const run = { mode: "SWEEP", step: "NAVIGATE_HOME", startedAt: Date.now() };
   await setActiveRun(run);
   const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
   if (tab) await chrome.tabs.update(tab.id, { active: true, url: HOME_URL });

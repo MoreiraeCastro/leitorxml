@@ -2,6 +2,56 @@
 // funções globais simples, sem módulos ES (mais simples de declarar em manifest.json).
 
 /**
+ * Captura erros JS não tratados da página (ex.: o "ReferenceError: options is
+ * not defined" do próprio Fisco Fácil, achado ao vivo em 2026-09-30 só porque
+ * o usuário checou o DevTools manualmente). O evento "error" do window chega
+ * no mundo isolado do content script mesmo quando a exceção acontece no mundo
+ * principal — os dois compartilham o mesmo objeto window pra despacho de
+ * eventos, só não compartilham variáveis/funções JS. Guardando isso aqui, dá
+ * pra anexar automaticamente na mensagem de falha reportada ao backend, sem
+ * precisar perguntar pro usuário o que apareceu no console a cada teste.
+ */
+const pageErrorLog = [];
+window.addEventListener("error", (event) => {
+  pageErrorLog.push(`${event.message} (${event.filename?.split("/").pop()}:${event.lineno})`);
+  if (pageErrorLog.length > 10) pageErrorLog.shift();
+});
+
+/** Rastro de passos da execução atual (ex.: "digitou CNPJ", "clicou Filtrar") — anexado em falhas pra dar contexto sem precisar perguntar o que apareceu na tela. */
+const executionTrail = [];
+function note(step) {
+  executionTrail.push(step);
+  if (executionTrail.length > 20) executionTrail.shift();
+}
+
+/** Monta o texto de diagnóstico (rastro de passos + erros JS da página) pra anexar numa mensagem de falha. */
+function describeDiagnostics() {
+  const parts = [];
+  if (executionTrail.length) parts.push(`Passos: ${executionTrail.join(" > ")}`);
+  if (pageErrorLog.length) parts.push(`Erros JS da página: ${pageErrorLog.join(" ;; ")}`);
+  return parts.length ? ` [${parts.join(" | ")}]` : "";
+}
+
+// Nenhuma etapa do fluxo por tarefa (entrar em procuração, buscar empresa,
+// preencher/confirmar formulário) deveria legitimamente passar disso — só
+// cobre o modo por-tarefa (REQUEST_NEXT_TASK), não a varredura completa
+// (SWEEP), que naturalmente demora mais e já tem seu próprio avanço de fila.
+const MAX_TASK_RUN_DURATION_MS = 5 * 60 * 1000;
+
+/**
+ * Detecta corrida travada silenciosamente: se a página recarrega no meio de
+ * uma espera (`waitFor`), a promise pendente some junto com o contexto
+ * antigo — nem sucesso nem falha é reportado, e a tarefa fica presa em
+ * AUTENTICANDO pra sempre (visto ao vivo várias vezes, 2026-09-30, com
+ * `erro_mensagem: null` indefinidamente). Cada content script confere isso
+ * ao carregar e falha alto em vez de ficar preso até alguém notar e resetar
+ * manualmente no banco.
+ */
+function runExpired(run) {
+  return run?.mode !== "SWEEP" && typeof run?.startedAt === "number" && Date.now() - run.startedAt > MAX_TASK_RUN_DURATION_MS;
+}
+
+/**
  * Espera até `check()` retornar algo truthy, ou estoura timeout. Faz polling
  * em vez de depender de eventos do jQuery/PrimeFaces, que não são visíveis do
  * mundo isolado da extensão. `label` identifica a espera na mensagem de erro
