@@ -96,6 +96,17 @@ async function searchContribuinte(cnpj) {
   await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
   note(`AJAX do Filtrar terminou (loading apareceu: ${loadingWatcher.stop() ? "sim" : "não"}; XHRs: ${describeXhrLog()})`);
 
+  if (xhrCount() === 0 && filtrarButton.id) {
+    // O clique real chegou na página (mousedown/click/submit recebidos) mas o onclick do
+    // site não disparou a requisição — chama o onclick direto no mundo principal, capturando
+    // a exceção pra saber por quê (e, se funcionar, o filtro segue normalmente).
+    const probe = await chrome.runtime.sendMessage({ type: "CALL_ONCLICK", elementId: filtrarButton.id });
+    note(`onclick chamado direto: ${JSON.stringify(probe?.result ?? probe)}`);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await waitForAjaxIdle({ label: "AJAX do Filtrar (onclick direto) terminar" });
+    note(`após onclick direto: XHRs: ${describeXhrLog()}`);
+  }
+
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
   if (body?.querySelector(".ui-datatable-empty-message")) {
     note("resultado: lista vazia");

@@ -48,11 +48,26 @@ function describeXhrLog() {
   try {
     events = JSON.parse(document.documentElement.dataset.leitorxmlEvents || "[]");
   } catch {}
-  const eventsText = events.length
-    ? `eventos recebidos pela página: ${events.map((e) => `${e.type}@${e.tag}${e.id ? `#${e.id}` : ""}${e.trusted ? "" : "(sintético)"}`).join(", ")}`
-    : "página não recebeu nenhum mousedown/click/submit";
+  let pageErrors = [];
+  try {
+    pageErrors = JSON.parse(document.documentElement.dataset.leitorxmlErrors || "[]");
+  } catch {}
+  const errorsText = pageErrors.length ? `; erros no mundo principal: ${pageErrors.join(" ;; ")}` : "";
+  const eventsText =
+    (events.length
+      ? `eventos recebidos pela página: ${events.map((e) => `${e.type}@${e.tag}${e.id ? `#${e.id}` : ""}${e.trusted ? "" : "(sintético)"}`).join(", ")}`
+      : "página não recebeu nenhum mousedown/click/submit") + errorsText;
   if (!log.length) return `nenhuma requisição AJAX disparada; ${eventsText}`;
   return `${log.map((entry) => `${entry.method} ${entry.url} ${JSON.stringify(entry.params)} -> ${entry.status}${entry.updates?.length ? ` atualizou [${entry.updates.join(",")}]` : ""}`).join(" ; ")}; ${eventsText}`;
+}
+
+/** Quantas XHRs o site disparou desde o último `clearXhrLog()`. */
+function xhrCount() {
+  try {
+    return JSON.parse(document.documentElement.dataset.leitorxmlXhr || "[]").length;
+  } catch {
+    return 0;
+  }
 }
 
 /** Observa o overlay #loading: `stop()` devolve true se ele chegou a aparecer (prova de que o clique disparou algo). */

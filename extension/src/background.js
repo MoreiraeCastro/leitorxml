@@ -126,6 +126,16 @@ async function ensurePageGlobals(tabId) {
         root.dataset.leitorxmlEvents = JSON.stringify(log.slice(-10));
       };
       for (const type of ["mousedown", "click", "submit"]) document.addEventListener(type, logEvent, true);
+      // Erros da página capturados DENTRO do mundo principal (não dá pra ter certeza
+      // de que o "error" do mundo isolado enxerga exceções daqui).
+      window.addEventListener("error", (event) => {
+        let log = [];
+        try {
+          log = JSON.parse(root.dataset.leitorxmlErrors || "[]");
+        } catch {}
+        log.push(`${event.message} (${String(event.filename ?? "").split("/").pop()}:${event.lineno})`);
+        root.dataset.leitorxmlErrors = JSON.stringify(log.slice(-5));
+      });
       const originalOpen = XMLHttpRequest.prototype.open;
       const originalSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {
@@ -476,6 +486,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const run = await getActiveRun();
           if (run) expectedDownloadTaskId = run.taskId;
           sendResponse({ ok: true });
+          break;
+        }
+        case "CALL_ONCLICK": {
+          // Chama o onclick inline do elemento direto no mundo principal, devolvendo
+          // a exceção se houver — separa "o onclick do site quebra" de "o clique não chegou".
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
+          const [injection] = await chrome.scripting.executeScript({
+            target: { tabId: sender.tab.id },
+            world: "MAIN",
+            args: [message.elementId],
+            func: (elementId) => {
+              const element = document.getElementById(elementId);
+              if (!element || typeof element.onclick !== "function") return { called: false, reason: element ? "sem onclick" : "elemento não encontrado" };
+              try {
+                const result = element.onclick(new MouseEvent("click", { bubbles: true, cancelable: true }));
+                return { called: true, returned: String(result) };
+              } catch (error) {
+                return { called: true, threw: `${error?.name}: ${error?.message}`, stack: String(error?.stack ?? "").split("\n").slice(0, 3).join(" | ").slice(0, 300) };
+              }
+            },
+          });
+          sendResponse({ ok: true, result: injection?.result });
           break;
         }
         case "ENSURE_PAGE_GLOBALS": {
