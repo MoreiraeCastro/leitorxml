@@ -93,7 +93,10 @@ async function ensurePageGlobals(tabId) {
     target: { tabId },
     world: "MAIN",
     func: () => {
-      window.options = window.options ?? {};
+      // string vazia, não objeto: showLoading(options) → getContainer(source) faz
+      // `(source || "").split(...)`, que quebra com TypeError se `source` for um objeto
+      // (confirmado ao vivo, 2026-10-02, com `window.options = {}`).
+      window.options = window.options ?? "";
 
       // Registro read-only das requisições XHR do site (PrimeFaces AJAX), lido
       // pelo content script via document.documentElement.dataset — única forma
@@ -503,7 +506,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const result = element.onclick(new MouseEvent("click", { bubbles: true, cancelable: true }));
                 return { called: true, returned: String(result) };
               } catch (error) {
-                return { called: true, threw: `${error?.name}: ${error?.message}`, stack: String(error?.stack ?? "").split("\n").slice(0, 3).join(" | ").slice(0, 300) };
+                return {
+                  called: true,
+                  threw: `${error?.name}: ${error?.message}`,
+                  stack: String(error?.stack ?? "").split("\n").slice(0, 3).join(" | ").slice(0, 300),
+                  showLoadingSrc: typeof window.showLoading === "function" ? String(window.showLoading).slice(0, 500) : "showLoading não é global",
+                };
               }
             },
           });
