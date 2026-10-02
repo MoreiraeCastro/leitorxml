@@ -272,7 +272,8 @@ function describeExtractionForm() {
   if (!form) return "sem FrmSolicitarExtracaoDfe";
   return [...form.querySelectorAll("input,select")]
     .map((el) => `${el.tagName.toLowerCase()}${el.type ? `:${el.type}` : ""}#${el.id || el.name}=${String(el.value).slice(0, 20)}${el.checked ? " ✓" : ""} ${el.offsetWidth}x${el.offsetHeight}`)
-    .join(" | ");
+    .join(" | ")
+    .concat(` | botões visíveis: ${[...document.querySelectorAll("button, a.ui-button")].filter((el) => el.offsetWidth > 0).map((el) => el.textContent.trim().slice(0, 25)).join(", ")}`);
 }
 
 async function fillAndSubmitExtractionForm(run) {
@@ -305,7 +306,25 @@ async function fillAndSubmitExtractionForm(run) {
   const confirmar = document.getElementById("FrmSolicitarExtracaoDfe:submitPesquisa");
   if (!confirmar) throw new Error("BOTAO_CONFIRMAR_EXTRACAO_NAO_ENCONTRADO");
   await realNavigationClick(confirmar);
-  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação de volta após confirmar solicitação de extração" });
+  note("clicou Confirmar solicitação");
+
+  // O site NÃO navega ao confirmar: mostra o modal "Solicitação de Extração de DFe — O resultado
+  // será apresentado na aba Solicitações" com um botão "Fechar" (confirmado ao vivo, 2026-10-02).
+  const findVisibleButton = (text) => [...document.querySelectorAll("button, a")].find((el) => el.textContent.trim() === text && el.offsetWidth > 0 && el.offsetHeight > 0);
+  const fechar = await waitFor(() => findVisibleButton("Fechar"), { timeoutMs: 15000, label: 'modal "Solicitação de Extração de DFe" (botão Fechar) aparecer' });
+  note("modal da solicitação apareceu — solicitação criada na SEFAZ");
+
+  // Marca AGORA, antes de qualquer navegação: o script desta página é destruído quando o navegador
+  // sai dela, então qualquer coisa depois do clique em "Voltar" nunca rodaria.
+  await setRunFlag({ formSubmitted: true });
+  await reportStatus("SOLICITADO");
+
+  await realNavigationClick(fechar);
+  await waitForAjaxIdle({ label: "AJAX ao fechar o modal da solicitação" });
+  const voltar = findVisibleButton("Voltar");
+  if (!voltar) throw new Error("BOTAO_VOLTAR_NAO_ENCONTRADO depois de fechar o modal da solicitação");
+  await realNavigationClick(voltar);
+  // Navega pra mainAbasContribuinte — content-fisco.js reinjeta lá e segue pra aba Solicitações.
 }
 
 // ---------- Orquestração ----------
@@ -358,10 +377,8 @@ async function fillAndSubmitExtractionForm(run) {
     }
 
     if (location.pathname.includes("solicitacaoExtracaoDfe")) {
-      await fillAndSubmitExtractionForm(run);
-      await setRunFlag({ formSubmitted: true });
-      await reportStatus("SOLICITADO");
-      return; // navegação de volta pra mainAbasContribuinte.
+      await fillAndSubmitExtractionForm(run); // marca SOLICITADO e volta pra mainAbasContribuinte por dentro.
+      return;
     }
 
     if (location.pathname.includes("mainAbasContribuinte")) {
