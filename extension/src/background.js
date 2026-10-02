@@ -215,19 +215,93 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (!run.taskId) return;
   if (Date.now() - run.startedAt < RUN_STALL_MS) return;
   if (run.formSubmitted) {
-    // A solicitação já foi criada e registrada como SOLICITADO — só o encadeamento parou. Não derruba a tarefa.
-    await clearActiveRun();
+    // A solicitação já foi criada e registrada como SOLICITADO — só o encadeamento parou. Não derruba a tarefa;
+    // a esteira segue pra próxima.
+    await beltOnSuccess(await findWorkTabId(), run).catch(() => clearActiveRun());
     return;
   }
   const { lastNote } = await chrome.storage.session.get("lastNote");
   const onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
-  await reportFalha(run.taskId, `RUN_TRAVADA: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar nem reportar falha; ${onde}`).catch(() => {});
+  await failActiveRun(run, `RUN_TRAVADA: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar nem reportar falha; ${onde}`, await findWorkTabId()).catch(() => {});
 });
 
 /** Busca a próxima tarefa e prepara a corrida: decide se dá pra continuar na mesma empresa (economiza navegação) ou se precisa voltar pra Página Principal e reentrar por procuração. */
-// Quantas tarefas seguidas um único clique em "Buscar próxima tarefa" processa. Cada uma cria
-// uma solicitação REAL na SEFAZ — 3 = uma empresa inteira (NF-e Dest., NF-e Emit., NFC-e Emit.).
-const MAX_CHAIN_TASKS = 3;
+// ---------- Esteira de solicitações ----------
+// Um clique em "Iniciar esteira" processa a fila inteira: as 3 combinações de uma empresa e, quando acabam,
+// a próxima empresa, até não sobrar nada. Cada tarefa cria uma solicitação REAL na SEFAZ, então a esteira
+// tem proteções: falha de uma tarefa não derruba a esteira (segue pra próxima), mas N falhas SEGUIDAS
+// (problema geral: sessão caída, site fora do ar, certificado) param tudo; e dá pra parar a pedido.
+const BELT_MAX_CONSECUTIVE_FAILURES = 3;
+const BELT_HARD_CAP = 1500;
+
+async function getBelt() {
+  const { belt } = await chrome.storage.session.get("belt");
+  return belt ?? null;
+}
+async function setBelt(belt) {
+  await chrome.storage.session.set({ belt });
+}
+async function endBelt(summary) {
+  const belt = (await getBelt()) ?? {};
+  await setBelt({ ...belt, active: false, summary, finishedAt: Date.now() });
+}
+
+/** Uma aba do portal/Fisco Fácil, pra o vigia (que não tem `sender.tab`) poder navegar. */
+async function findWorkTabId() {
+  const [tab] = await chrome.tabs.query({ url: ["https://fisco-facil.fazenda.rj.gov.br/*", "https://ssacert.fazenda.rj.gov.br/*"] });
+  return tab?.id ?? null;
+}
+
+/** A tarefa atual foi solicitada: conta e segue pra próxima (da mesma empresa se houver, senão a próxima empresa). Sem esteira ativa, só encerra a corrida. */
+async function beltOnSuccess(tabId, previousRun) {
+  const belt = await getBelt();
+  if (!belt?.active) {
+    await finishBatchAndReturnHome(tabId);
+    return { done: true };
+  }
+  const processed = belt.processed + 1;
+  if (belt.stopRequested) {
+    await endBelt(`Esteira parada a pedido: ${processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
+    await setBelt({ ...(await getBelt()), processed });
+    await finishBatchAndReturnHome(tabId);
+    return { done: true };
+  }
+  if (processed >= BELT_HARD_CAP) {
+    await endBelt(`Esteira parada no limite de segurança (${BELT_HARD_CAP} tarefas). Clique de novo para continuar.`);
+    await setBelt({ ...(await getBelt()), processed });
+    await finishBatchAndReturnHome(tabId);
+    return { done: true };
+  }
+  await setBelt({ ...belt, processed, failures: 0 });
+  const run = await claimNextTaskAndPrepare(1, previousRun?.establishment?.id ?? null, tabId);
+  if (!run) {
+    await endBelt(`Fila concluída: ${processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
+    await setBelt({ ...(await getBelt()), processed });
+    await finishBatchAndReturnHome(tabId);
+    return { done: true };
+  }
+  return { done: false, run };
+}
+
+/** A tarefa atual falhou (já registrada no backend): a esteira segue pra próxima empresa, a menos que as falhas seguidas passem do limite. */
+async function beltOnFailure(tabId, motivo) {
+  const belt = await getBelt();
+  if (!belt?.active) return;
+  const failures = belt.failures + 1;
+  const failed = belt.failed + 1;
+  if (belt.stopRequested || failures >= BELT_MAX_CONSECUTIVE_FAILURES) {
+    await setBelt({ ...belt, failures, failed });
+    await endBelt(`Esteira interrompida após ${failures} falha(s) seguida(s) (${belt.processed} solicitada(s) antes). Última: ${motivo}`.slice(0, 600));
+    return;
+  }
+  await setBelt({ ...belt, failures, failed });
+  try {
+    const run = await claimNextTaskAndPrepare(1, null, tabId);
+    if (!run) await endBelt(`Fila concluída: ${belt.processed} tarefa(s) solicitada(s), ${failed} falha(s).`);
+  } catch (error) {
+    await endBelt(`Esteira interrompida ao buscar a próxima tarefa: ${error.message}`);
+  }
+}
 
 // Quantas empresas um clique em "Conferir resultados" visita (cada uma pode baixar até 3 ZIPs).
 const MAX_TRACK_COMPANIES = 3;
@@ -263,7 +337,7 @@ async function finishBatchAndReturnHome(tabId) {
   if (tabId != null) await chrome.tabs.update(tabId, { url: HOME_URL }).catch(() => {});
 }
 
-async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = null) {
+async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = null, tabId = null) {
   const previousRun = await getActiveRun();
   // Ao encadear, prefere as tarefas pendentes da empresa em que já estamos (as 3 combinações em
   // sequência, sem voltar ao modal de procurações a cada solicitação).
@@ -300,9 +374,7 @@ async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = n
   await setActiveRun(run);
 
   if (!sameEstablishment) {
-    const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
-    if (tab) await chrome.tabs.update(tab.id, { active: true, url: HOME_URL });
-    else await chrome.tabs.create({ url: HOME_URL });
+    await navigateToHome(tabId);
   } else {
     // mesma página, só avisa o content script já carregado pra prosseguir.
     const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
@@ -352,13 +424,14 @@ async function reportFalha(taskId, motivo) {
 }
 
 /** Falha da corrida ativa: no acompanhamento/varredura não há UMA tarefa (guarda o erro pro popup); na solicitação, falha a tarefa. */
-async function failActiveRun(run, motivo) {
+async function failActiveRun(run, motivo, tabId = null) {
   if (run.mode === "TRACK" || run.mode === "SWEEP" || !run.taskId) {
     await chrome.storage.session.set({ lastSweepError: motivo.slice(0, 3900) });
     await clearActiveRun();
     return;
   }
   await reportFalha(run.taskId, motivo);
+  await beltOnFailure(tabId ?? (await findWorkTabId()), motivo);
 }
 
 async function reportProcuracaoIndice(entries) {
@@ -490,7 +563,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
             break;
           }
+          await setBelt({ active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+          await chrome.storage.session.remove("lastSweepError");
           const run = await claimNextTaskAndPrepare();
+          if (!run) await endBelt("Nada pendente na fila.");
           sendResponse({ ok: true, run });
           break;
         }
@@ -508,7 +584,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "REPORT_FAILURE": {
           const run = await getActiveRun();
-          if (run) await failActiveRun(run, message.motivo);
+          // `taskId` evita que uma falha atrasada de uma página antiga derrube a corrida NOVA da esteira.
+          if (run && (!message.taskId || run.taskId === message.taskId)) await failActiveRun(run, message.motivo, sender.tab?.id);
           sendResponse({ ok: true });
           break;
         }
@@ -577,7 +654,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!run?.discovery) return sendResponse({ ok: false, error: "NO_DISCOVERY_IN_PROGRESS" });
           const nextCursor = run.discovery.cursor + 1;
           if (nextCursor >= run.discovery.queue.length) {
-            await failActiveRun(run, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`);
+            await failActiveRun(run, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`, sender.tab?.id);
             sendResponse({ ok: true, done: true });
             break;
           }
@@ -687,19 +764,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "CHAIN_NEXT_TASK": {
-          // A solicitação da tarefa atual já foi criada e registrada — segue pra próxima (mesma
-          // empresa quando houver: pula a reentrada por procuração), até MAX_CHAIN_TASKS por clique.
+          // A solicitação da tarefa atual já foi criada e registrada — a esteira segue pra próxima
+          // (mesma empresa quando houver: pula a reentrada por procuração; senão, a próxima empresa).
           const previous = await getActiveRun();
           if (!previous) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
-          const chainCount = previous.chainCount ?? 1;
-          if (chainCount >= MAX_CHAIN_TASKS) {
-            await finishBatchAndReturnHome(sender.tab?.id);
-            sendResponse({ ok: true, done: true, reason: "LIMITE_DO_LOTE" });
-            break;
+          const outcome = await beltOnSuccess(sender.tab?.id, previous);
+          sendResponse({ ok: true, done: outcome.done, run: outcome.run ?? null });
+          break;
+        }
+        case "STOP_BELT": {
+          const belt = await getBelt();
+          if (!belt?.active) return sendResponse({ ok: true, wasActive: false });
+          if (await getActiveRun()) {
+            await setBelt({ ...belt, stopRequested: true });
+          } else {
+            await endBelt("Esteira parada a pedido.");
           }
-          const run = await claimNextTaskAndPrepare(chainCount + 1, previous.establishment?.id ?? null);
-          if (!run) await finishBatchAndReturnHome(sender.tab?.id);
-          sendResponse({ ok: true, done: !run, run });
+          sendResponse({ ok: true, wasActive: true });
           break;
         }
         case "HIDE_LOADING":

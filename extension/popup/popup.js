@@ -26,13 +26,20 @@ function describeRun(run) {
   return `Em andamento: ${run.establishment?.razaoSocial ?? "?"} — ${run.tipoDocumento}/${run.papel}`;
 }
 
+function describeBelt(belt) {
+  if (!belt) return "";
+  const progresso = `${belt.processed} solicitada(s), ${belt.failed} falha(s)`;
+  if (belt.active) return `\nEsteira ativa: ${progresso}${belt.stopRequested ? " — parando após a tarefa atual" : ""}`;
+  return belt.summary ? `\n${belt.summary}` : "";
+}
+
 async function load() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   urlInput.value = apiBaseUrl ?? "http://localhost:3003/leitorxml";
   tokenInput.value = apiToken ?? "";
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
-  const { lastSweepError } = await chrome.storage.session.get("lastSweepError");
-  statusEl.textContent = describeRun(run) ?? (lastSweepError ? `Último erro: ${lastSweepError}` : "Nenhuma tarefa em andamento.");
+  const { lastSweepError, belt } = await chrome.storage.session.get(["lastSweepError", "belt"]);
+  statusEl.textContent = (describeRun(run) ?? (lastSweepError ? `Último erro: ${lastSweepError}` : "Nenhuma tarefa em andamento.")) + describeBelt(belt);
   const { connectionStatus } = await chrome.storage.session.get("connectionStatus");
   renderConnectionStatus(connectionStatus);
 }
@@ -57,6 +64,11 @@ document.getElementById("startTracking").addEventListener("click", async () => {
   else statusEl.textContent = describeRun(response.run);
 });
 
+document.getElementById("stopBelt").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: "STOP_BELT" });
+  statusEl.textContent = response.wasActive ? "Parando a esteira depois da tarefa atual..." : "A esteira não está ativa.";
+});
+
 document.getElementById("startNext").addEventListener("click", async () => {
   statusEl.textContent = "Buscando...";
   const response = await chrome.runtime.sendMessage({ type: "REQUEST_NEXT_TASK" });
@@ -67,7 +79,7 @@ document.getElementById("startNext").addEventListener("click", async () => {
   } else if (!response.run) {
     statusEl.textContent = "Nada pendente no momento.";
   } else {
-    statusEl.textContent = `Iniciando: ${response.run.establishment.razaoSocial} — ${response.run.tipoDocumento}/${response.run.papel}`;
+    statusEl.textContent = `Esteira iniciada: ${response.run.establishment.razaoSocial} — ${response.run.tipoDocumento}/${response.run.papel}\nVai até a fila acabar; use \"Parar esteira\" para interromper.`;
   }
 });
 

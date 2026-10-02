@@ -111,7 +111,7 @@ async function enterProcuracao(grupo, posicao) {
 
   if (runExpired(run)) {
     const motivo = `RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`;
-    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: motivo + describeDiagnostics() });
+    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", taskId: run.taskId, motivo: motivo + describeDiagnostics() });
     return;
   }
 
@@ -143,7 +143,7 @@ async function enterProcuracao(grupo, posicao) {
     // Certificado próprio: exigiria trocar o certificado ativo no navegador,
     // algo que só o usuário pode fazer (seletor nativo do SO). Não implementado
     // ainda — precisa validar na PoC como fica o fluxo real nesse caso.
-    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: "Estabelecimento usa certificado próprio — troca de certificado ainda não automatizada, verificar manualmente." });
+    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", taskId: run.taskId, motivo: "Estabelecimento usa certificado próprio — troca de certificado ainda não automatizada, verificar manualmente." });
     return;
   }
 
@@ -171,6 +171,6 @@ async function enterProcuracao(grupo, posicao) {
     await enterProcuracao(current.grupo, current.posicao);
     note(`entrou na procuração grupo=${current.grupo} posicao=${current.posicao} (descoberta)`);
   } catch (error) {
-    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: error.message + describeDiagnostics() });
+    await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", taskId: run.taskId, motivo: error.message + describeDiagnostics() });
   }
 })();

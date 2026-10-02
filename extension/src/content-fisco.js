@@ -21,8 +21,9 @@ async function setRunFlag(patch) {
 async function reportStatus(status, extra = {}) {
   await chrome.runtime.sendMessage({ type: "REPORT_STATUS", status, ...extra });
 }
+let reportingTaskId;
 async function reportFailure(motivo) {
-  await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", motivo: motivo + describeDiagnostics() });
+  await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", taskId: reportingTaskId, motivo: motivo + describeDiagnostics() });
 }
 
 /** Formata como visto na tela após escolher "Meses" (ex.: "08/2026"). Ponto a validar na PoC — pode ser que o servidor espere outro formato. */
@@ -518,6 +519,7 @@ async function fillAndSubmitExtractionForm(run) {
 
   const run = await getActiveRun();
   if (!run) return;
+  reportingTaskId = run.taskId;
 
   if (runExpired(run)) {
     await reportFailure(`RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`);
