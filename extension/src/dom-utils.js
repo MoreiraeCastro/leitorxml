@@ -72,17 +72,16 @@ function xhrCount() {
 
 /** Observa o overlay #loading: `stop()` devolve true se ele chegou a aparecer (prova de que o clique disparou algo). */
 function watchLoadingOverlay() {
-  const el = document.getElementById("loading");
   let seen = false;
-  const observer = el
-    ? new MutationObserver(() => {
-        if (isLoadingOverlayVisible()) seen = true;
-      })
-    : null;
-  observer?.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+  // O site cria um CLONE do template #loading (mesmo id) ao mostrar o overlay — por isso observa a
+  // árvore inteira (childList + class/style), não só o elemento original.
+  const observer = new MutationObserver(() => {
+    if (isLoadingOverlayVisible()) seen = true;
+  });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
   return {
     stop() {
-      observer?.disconnect();
+      observer.disconnect();
       return seen;
     },
   };
@@ -138,14 +137,19 @@ async function waitForAjaxIdle(options = {}) {
   // dada como terminada com a requisição do Filtrar `pendente`, e a tabela foi lida
   // antes da resposta (sempre a lista inteira). Também espera as XHRs registradas por
   // `ensurePageGlobals` (background.js) terminarem.
-  const isIdle = () => {
-    return !isLoadingOverlayVisible() && !hasPendingXhr();
-  };
   const waitOptions = { timeoutMs: 30000, ...options };
-  await waitFor(isIdle, waitOptions);
+  await waitFor(() => !hasPendingXhr(), waitOptions);
+  // O overlay deveria sumir sozinho assim que as XHRs terminam; se não sumir em 3s, está preso
+  // (o clone criado por showLoading nunca é removido — visto ao vivo, 2026-10-02).
+  try {
+    await waitFor(() => !isLoadingOverlayVisible(), { timeoutMs: 3000, label: "overlay #loading sumir" });
+  } catch {
+    await unstickLoadingOverlay();
+  }
   // debounce: garante que não é só um instante entre duas chamadas AJAX encadeadas.
   await new Promise((resolve) => setTimeout(resolve, 250));
-  await waitFor(isIdle, waitOptions);
+  await waitFor(() => !hasPendingXhr(), waitOptions);
+  if (isLoadingOverlayVisible()) await unstickLoadingOverlay();
 }
 
 /**
@@ -156,21 +160,32 @@ async function waitForAjaxIdle(options = {}) {
  * das funções do site pra diagnóstico.
  */
 async function clearLoadingOverlayCovering() {
-  const isShown = isLoadingOverlayVisible;
-  if (!isShown()) return;
+  if (!isLoadingOverlayVisible()) return;
   try {
-    await waitFor(() => !isShown(), { timeoutMs: 6000, label: "overlay #loading sumir antes do clique" });
+    await waitFor(() => !isLoadingOverlayVisible(), { timeoutMs: 6000, label: "overlay #loading sumir antes do clique" });
     return;
   } catch {}
   await waitFor(() => !hasPendingXhr(), { timeoutMs: 20000, label: "XHR pendente terminar antes do clique" }).catch(() => {});
-  if (!isShown()) return;
+  if (isLoadingOverlayVisible()) await unstickLoadingOverlay();
+}
+
+/**
+ * Overlay preso visível: chama o hideLoading() do próprio site e, se algum clone
+ * continuar visível, esconde à força. O site cria um clone do template #loading (mesmo
+ * id, dois elementos) ao mostrar e deveria removê-lo ao terminar — visto ao vivo
+ * (2026-10-02) o clone ficou cobrindo a tela depois do AJAX terminar.
+ */
+async function unstickLoadingOverlay() {
   const hidden = await chrome.runtime.sendMessage({ type: "HIDE_LOADING" });
-  note(`overlay #loading preso — chamei hideLoading(): ${JSON.stringify(hidden?.result)}`);
   await new Promise((resolve) => setTimeout(resolve, 300));
-  if (isShown()) {
-    const info = await chrome.runtime.sendMessage({ type: "DESCRIBE_LOADING" });
-    throw new Error(`OVERLAY_LOADING_PRESO: ${JSON.stringify(info?.result)}`);
+  if (!isLoadingOverlayVisible()) {
+    note(`overlay #loading preso: resolvido por hideLoading() (${JSON.stringify(hidden?.result)})`);
+    return;
   }
+  for (const el of document.querySelectorAll('[id="loading"]')) {
+    if (isElementVisible(el)) el.style.display = "none";
+  }
+  note(`overlay #loading preso: hideLoading()=${JSON.stringify(hidden?.result)} não bastou, escondi à força [${describeLoadingOverlay()}]`);
 }
 
 /**
@@ -179,19 +194,26 @@ async function clearLoadingOverlayCovering() {
  * por classe dizia "escondido" — por isso "loading apareceu: não" em todos os testes e
  * o waitForAjaxIdle nunca esperava de verdade.
  */
-function isLoadingOverlayVisible() {
-  const el = document.getElementById("loading");
-  if (!el) return false;
+function isElementVisible(el) {
   const style = getComputedStyle(el);
   return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && el.offsetWidth > 0 && el.offsetHeight > 0;
 }
 
-/** Descrição curta do overlay (classe, display, tamanho) pra diagnóstico. */
+// `[id="loading"]` pega TODOS os elementos com esse id (há mais de um: template escondido + clone visível) — getElementById só devolveria o primeiro.
+function isLoadingOverlayVisible() {
+  return [...document.querySelectorAll('[id="loading"]')].some(isElementVisible);
+}
+
+/** Descrição curta de cada elemento #loading (classe, display, tamanho) pra diagnóstico. */
 function describeLoadingOverlay() {
-  const el = document.getElementById("loading");
-  if (!el) return "sem #loading";
-  const style = getComputedStyle(el);
-  return `class="${el.className}" display=${style.display} visibility=${style.visibility} opacity=${style.opacity} ${el.offsetWidth}x${el.offsetHeight}`;
+  const all = [...document.querySelectorAll('[id="loading"]')];
+  if (!all.length) return "sem #loading";
+  return all
+    .map((el) => {
+      const style = getComputedStyle(el);
+      return `{class="${el.className}" display=${style.display} ${el.offsetWidth}x${el.offsetHeight}}`;
+    })
+    .join(" ");
 }
 
 /** Verdadeiro se alguma XHR do site registrada (ver `ensurePageGlobals`) ainda não terminou. */
