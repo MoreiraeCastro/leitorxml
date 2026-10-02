@@ -241,10 +241,12 @@ async function reportEvento(taskId, body) {
 }
 
 async function reportFalha(taskId, motivo) {
+  // O backend recusa (400) motivo > 4000 chars e a falha sumiria sem rastro,
+  // deixando a tarefa presa em AUTENTICANDO (visto ao vivo, 2026-10-02).
   await apiFetch(`/api/leitorxml/extensao/tarefas/${taskId}/falha`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ motivo }),
+    body: JSON.stringify({ motivo: motivo.slice(0, 3900) }),
   });
   await clearActiveRun();
 }

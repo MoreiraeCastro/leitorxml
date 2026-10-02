@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
 
 export const runtime = "nodejs";
-const falhaSchema = z.object({ motivo: z.string().trim().min(1).max(500) });
+const falhaSchema = z.object({ motivo: z.string().trim().min(1).max(4000) });
 
 /** CAPTCHA, bloqueio, confirmação inesperada ou qualquer mudança de tela não reconhecida — a automação para e pede intervenção (regra explícita do escopo original: nunca contornar controles de segurança). */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
