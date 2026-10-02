@@ -87,10 +87,14 @@ async function searchContribuinte(cnpj) {
 
   const filtrarButton = findByExactText("button", "Filtrar") ?? [...document.querySelectorAll("button")].find((b) => b.textContent.includes("Filtrar"));
   if (!filtrarButton) throw new Error("BOTAO_FILTRAR_NAO_ENCONTRADO");
+  const tipoFiltro = document.getElementById("FrmFisco:filtroIeCnpjRazao_label")?.textContent.trim();
+  note(`antes de clicar: campo="${searchInput.value}" tipo=${tipoFiltro}`);
+  clearXhrLog();
+  const loadingWatcher = watchLoadingOverlay();
   await realNavigationClick(filtrarButton);
   note("clicou Filtrar");
   await waitForAjaxIdle({ label: "AJAX da busca por CNPJ terminar" });
-  note("AJAX do Filtrar terminou (loading escondeu)");
+  note(`AJAX do Filtrar terminou (loading apareceu: ${loadingWatcher.stop() ? "sim" : "não"}; XHRs: ${describeXhrLog()})`);
 
   const body = document.getElementById("FrmFisco:ListaContribuintes_data");
   if (body?.querySelector(".ui-datatable-empty-message")) {

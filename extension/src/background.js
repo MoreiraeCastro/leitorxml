@@ -94,6 +94,50 @@ async function ensurePageGlobals(tabId) {
     world: "MAIN",
     func: () => {
       window.options = window.options ?? {};
+
+      // Registro read-only das requisições XHR do site (PrimeFaces AJAX), lido
+      // pelo content script via document.documentElement.dataset — única forma
+      // de saber se um clique realmente disparou uma requisição e o que foi
+      // enviado/atualizado, já que o mundo isolado não enxerga XHR da página.
+      if (window.__leitorxmlXhrHooked) return;
+      window.__leitorxmlXhrHooked = true;
+      const root = document.documentElement;
+      const KEYS = ["javax.faces.source", "javax.faces.partial.execute", "javax.faces.partial.render", "FrmFisco:valorDaPesquisa", "FrmFisco:filtroIeCnpjRazao_input"];
+      let seq = 0;
+      const readLog = () => {
+        try {
+          return JSON.parse(root.dataset.leitorxmlXhr || "[]");
+        } catch {
+          return [];
+        }
+      };
+      const writeLog = (log) => {
+        root.dataset.leitorxmlXhr = JSON.stringify(log.slice(-10));
+      };
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        this.__lx = { method, url: String(url).split("?")[0].split("/").pop() };
+        return originalOpen.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function (body) {
+        const id = ++seq;
+        const params = {};
+        try {
+          const search = new URLSearchParams(typeof body === "string" ? body : "");
+          for (const key of KEYS) if (search.has(key)) params[key] = search.get(key);
+        } catch {}
+        writeLog([...readLog(), { id, ...this.__lx, params, status: "pendente" }]);
+        this.addEventListener("loadend", () => {
+          let text = "";
+          try {
+            text = this.responseText;
+          } catch {}
+          const updates = [...text.matchAll(/<update id="([^"]+)"/g)].map((match) => match[1]).slice(0, 6);
+          writeLog(readLog().map((entry) => (entry.id === id ? { ...entry, status: this.status, updates } : entry)));
+        });
+        return originalSend.call(this, body);
+      };
     },
   });
 }

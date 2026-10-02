@@ -32,6 +32,39 @@ function describeDiagnostics() {
   return parts.length ? ` [${parts.join(" | ")}]` : "";
 }
 
+/** Zera o registro de XHRs do site (gravado por `ensurePageGlobals` em background.js) — chamar antes de uma ação pra ver só as requisições dela. */
+function clearXhrLog() {
+  delete document.documentElement.dataset.leitorxmlXhr;
+}
+
+/** Resume as XHRs registradas desde o último `clearXhrLog()`: alvo, parâmetros enviados, status e componentes atualizados. */
+function describeXhrLog() {
+  let log = [];
+  try {
+    log = JSON.parse(document.documentElement.dataset.leitorxmlXhr || "[]");
+  } catch {}
+  if (!log.length) return "nenhuma requisição AJAX disparada";
+  return log.map((entry) => `${entry.method} ${entry.url} ${JSON.stringify(entry.params)} -> ${entry.status}${entry.updates?.length ? ` atualizou [${entry.updates.join(",")}]` : ""}`).join(" ; ");
+}
+
+/** Observa o overlay #loading: `stop()` devolve true se ele chegou a aparecer (prova de que o clique disparou algo). */
+function watchLoadingOverlay() {
+  const el = document.getElementById("loading");
+  let seen = false;
+  const observer = el
+    ? new MutationObserver(() => {
+        if (!el.classList.contains("hidden")) seen = true;
+      })
+    : null;
+  observer?.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+  return {
+    stop() {
+      observer?.disconnect();
+      return seen;
+    },
+  };
+}
+
 // Nenhuma etapa do fluxo por tarefa (entrar em procuração, buscar empresa,
 // preencher/confirmar formulário) deveria legitimamente passar disso — só
 // cobre o modo por-tarefa (REQUEST_NEXT_TASK), não a varredura completa
