@@ -280,16 +280,20 @@ async function fillAndSubmitExtractionForm(run) {
   if (!mesesRadio.checked) {
     await realNavigationClick(mesesRadio);
     note("clicou Meses");
-    await waitFor(() => document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), { timeoutMs: 5000, label: "campos de data aparecerem após marcar Meses" });
-    note("campos de data apareceram");
+    // Marcar "Meses" troca os campos de data via AJAX (os de "Dia" somem e entram os de
+    // "Periodo") — preencher antes do AJAX terminar grava em elementos que são descartados
+    // (visto ao vivo, 2026-10-02: datas ficavam vazias).
+    await waitForAjaxIdle({ label: "AJAX de trocar os campos de data ao marcar Meses" });
   }
-  // Fecha o calendário popup que abre ao marcar "Meses", e seta o valor direto —
-  // não navega o datepicker por clique. Formato a confirmar na PoC (ver formatCompetencia).
-  document.body.click();
   const competencia = formatCompetencia(run.competenciaAno, run.competenciaMes);
-  setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtInicioDia_input"), competencia);
-  setInputValue(document.getElementById("FrmSolicitarExtracaoDfe:dtFimDia_input"), competencia);
-  note(`datas setadas para ${competencia}`);
+  for (const field of ["dtInicioPeriodo_input", "dtFimPeriodo_input"]) {
+    const input = await waitFor(() => document.getElementById(`FrmSolicitarExtracaoDfe:${field}`), { timeoutMs: 5000, label: `campo ${field} aparecer` });
+    // Campo com máscara/calendário — digitação real (CDP), igual ao CNPJ; setar .value não "gruda".
+    await typeIntoMaskedInput(input, competencia);
+    note(`${field} = "${input.value}"`);
+  }
+  // Clica no rádio "Meses" (já marcado, não muda nada) só pra fechar o popup do calendário, que fecha em clique fora.
+  await realNavigationClick(mesesRadio);
 
   const docRadio = document.querySelector(`input[name="FrmSolicitarExtracaoDfe:tpDocumento"][value="${DOC_VALUE[run.tipoDocumento]}"]`);
   if (!docRadio) throw new Error(`OPCAO_DOCUMENTO_NAO_ENCONTRADA: ${run.tipoDocumento}`);

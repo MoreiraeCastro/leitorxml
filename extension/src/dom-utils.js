@@ -273,8 +273,20 @@ function realClick(el) {
  */
 function visibleClickTarget(el) {
   if (!(el instanceof HTMLInputElement) || !["radio", "checkbox"].includes(el.type)) return el;
+  // Alvo = o que está de fato por cima do centro do input (ele mesmo, ou a caixa desenhada
+  // pelo PrimeFaces). Escolher a caixa "por classe" falhou ao vivo (2026-10-02): nos rádios de
+  // tipo de documento o input é visível e a caixa achada tinha tamanho zero.
+  el.scrollIntoView({ block: "center", behavior: "instant" });
+  const rect = el.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const group = el.closest(".ui-radiobutton, .ui-chkbox, label, td");
+    if (top && (top === el || group?.contains(top))) return top;
+  }
   const box = el.closest(".ui-radiobutton, .ui-chkbox")?.querySelector(".ui-radiobutton-box, .ui-chkbox-box");
-  return box ?? (el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null) ?? el;
+  if (box && box.offsetWidth > 0) return box;
+  const label = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+  return label && label.offsetWidth > 0 ? label : el;
 }
 
 async function realNavigationClick(el) {
