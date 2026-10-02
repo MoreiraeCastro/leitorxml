@@ -306,7 +306,7 @@ function visibleClickTarget(el) {
   return label && label.offsetWidth > 0 ? label : el;
 }
 
-async function realNavigationClick(el) {
+async function realNavigationClick(el, { downloadTaskId = null } = {}) {
   el = visibleClickTarget(el);
   // Mesma blindagem de `realClick()`: se o clique não disparar o handler
   // AJAX esperado do jeito certo, o navegador pode cair no submit nativo do
@@ -338,8 +338,10 @@ async function realNavigationClick(el) {
     const describe = (node) => (node ? `${node.tagName}${node.id ? `#${node.id}` : ""}.${String(node.className ?? "").slice(0, 40)}` : "nada (fora da janela)");
     throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}] [overlay: ${describeLoadingOverlay()}]`);
   }
-  const response = await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
+  // Com `downloadTaskId`, o background clica E captura o ZIP resultante (devolve `response.result`).
+  const response = await chrome.runtime.sendMessage(downloadTaskId ? { type: "CAPTURE_DOWNLOAD_CLICK", x, y, taskId: downloadTaskId } : { type: "REAL_CLICK", x, y });
   if (!response?.ok) throw new Error(response?.error ?? "REAL_CLICK_FALHOU");
+  return response;
 }
 
 /** Define o valor de um input controlado (React/PrimeFaces-friendly): seta via setter nativo e dispara input+change. */

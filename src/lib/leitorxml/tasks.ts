@@ -184,3 +184,55 @@ export async function claimNextTask(db: SupabaseClient, userId: string, now: Dat
   }
   return tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db));
 }
+
+const TRACKING_COLUMNS =
+  "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,sefaz_referencia,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
+
+/**
+ * Próxima empresa a ACOMPANHAR: a que tem tarefas já solicitadas (SOLICITADO / PROCESSANDO_SEFAZ) há mais
+ * tempo sem atualização. Devolve a empresa, como acessá-la e TODAS as tarefas pendentes dela — a extensão
+ * entra na empresa uma vez, abre a aba Solicitações e confere/baixa cada uma. Trava a empresa (mesmo
+ * mecanismo da fila de solicitações); `excludeEstablishmentIds` evita voltar numa empresa já visitada no
+ * mesmo lote (tarefas ainda "aguardando processamento" continuam pendentes e seriam reclamadas de novo).
+ */
+export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; now?: Date } = {}) {
+  const now = options.now ?? new Date();
+  const excluded = new Set(options.excludeEstablishmentIds ?? []);
+  const { data, error } = await db
+    .from("xml_collection_tasks")
+    .select(TRACKING_COLUMNS)
+    .in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ"])
+    .order("updated_at", { ascending: true })
+    .limit(300);
+  if (error) throw new Error("TRACKING_LOOKUP_FAILED");
+
+  const byEstablishment = new Map<string, NonNullable<typeof data>>();
+  for (const row of data ?? []) {
+    if (excluded.has(row.establishment_id)) continue;
+    byEstablishment.set(row.establishment_id, [...(byEstablishment.get(row.establishment_id) ?? []), row]);
+  }
+  for (const [establishmentId, rows] of byEstablishment) {
+    if (!(await acquireEstablishmentLock(db, establishmentId, userId, now))) continue;
+    const establishment = Array.isArray(rows[0].xml_watch_establishments) ? rows[0].xml_watch_establishments[0] : rows[0].xml_watch_establishments;
+    const accessContext = await resolveAccessContext(db, {
+      cnpj: establishment.cnpj,
+      certificadoTipo: establishment.certificado_tipo,
+      procuracaoGrupo: establishment.procuracao_grupo,
+      procuracaoPosicao: establishment.procuracao_posicao,
+    });
+    return {
+      establishment,
+      accessContext,
+      tasks: rows.map((row) => ({
+        id: row.id,
+        tipoDocumento: row.tipo_documento,
+        papel: row.papel,
+        competenciaAno: row.competencia_ano,
+        competenciaMes: row.competencia_mes,
+        status: row.status,
+        sefazReferencia: row.sefaz_referencia,
+      })),
+    };
+  }
+  return null;
+}

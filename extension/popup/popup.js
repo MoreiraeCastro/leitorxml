@@ -17,6 +17,7 @@ function renderConnectionStatus(connectionStatus) {
 
 function describeRun(run) {
   if (!run) return null;
+  if (run.mode === "TRACK") return `Conferindo resultados: ${run.establishment?.razaoSocial ?? "?"} (empresa ${run.trackCount ?? 1})`;
   if (run.mode === "SWEEP") {
     const total = run.sweepQueue?.length;
     const posicao = (run.sweepCursor ?? 0) + 1;
@@ -31,7 +32,7 @@ async function load() {
   tokenInput.value = apiToken ?? "";
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
   const { lastSweepError } = await chrome.storage.session.get("lastSweepError");
-  statusEl.textContent = describeRun(run) ?? (lastSweepError ? `Última varredura falhou: ${lastSweepError}` : "Nenhuma tarefa em andamento.");
+  statusEl.textContent = describeRun(run) ?? (lastSweepError ? `Último erro: ${lastSweepError}` : "Nenhuma tarefa em andamento.");
   const { connectionStatus } = await chrome.storage.session.get("connectionStatus");
   renderConnectionStatus(connectionStatus);
 }
@@ -45,6 +46,15 @@ document.getElementById("startSweep").addEventListener("click", async () => {
   statusEl.textContent = "Iniciando varredura...";
   const response = await chrome.runtime.sendMessage({ type: "START_SWEEP" });
   statusEl.textContent = response.ok ? describeRun(response.run) : `Erro: ${response.error}`;
+});
+
+document.getElementById("startTracking").addEventListener("click", async () => {
+  statusEl.textContent = "Procurando solicitações a conferir...";
+  const response = await chrome.runtime.sendMessage({ type: "START_TRACKING" });
+  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") statusEl.textContent = `Já tem uma corrida em andamento — espera terminar.\n${describeRun(response.run)}`;
+  else if (!response.ok) statusEl.textContent = `Erro: ${response.error}`;
+  else if (!response.run) statusEl.textContent = "Nenhuma solicitação pendente de conferência.";
+  else statusEl.textContent = describeRun(response.run);
 });
 
 document.getElementById("startNext").addEventListener("click", async () => {

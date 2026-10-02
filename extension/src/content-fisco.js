@@ -258,6 +258,127 @@ async function readLatestSolicitacaoAndAct(run) {
   await reportStatus(status, { sefazReferencia: referencia });
 }
 
+// ---------- Acompanhamento: conferir a aba Solicitações e baixar o que estiver pronto ----------
+
+const SOLICITACOES_TABLE_ID = "frmHistInteracoes:tabsHist:solicitacao";
+
+/** Linhas da aba Solicitações já interpretadas (documento, participante, período, situação, link) — por regex no texto, sem depender da ordem das colunas. */
+function readSolicitacaoRows() {
+  const body = document.getElementById(`${SOLICITACOES_TABLE_ID}_data`);
+  return [...(body?.querySelectorAll("tr[data-ri]") ?? [])].map((tr, index) => {
+    const cells = [...tr.querySelectorAll("td")];
+    const text = tr.textContent.replace(/\s+/g, " ").trim();
+    const referencia = cells[2]?.textContent.replace(/\s+/g, " ").trim() ?? text;
+    const periodo = referencia.match(/(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})/);
+    const quando = (cells[1]?.textContent ?? "").match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+    const situacaoLink = cells[3]?.querySelector("a") ?? [...tr.querySelectorAll("a")].find((a) => /process|aguard|expirad/i.test(a.textContent)) ?? null;
+    return {
+      index,
+      texto: text.slice(0, 200),
+      referencia,
+      tipoDocumento: /NFC-e/i.test(referencia) ? "NFCE" : /NF-e/i.test(referencia) ? "NFE" : null,
+      papel: /Emitente/i.test(referencia) ? "EMITENTE" : /Destinat/i.test(referencia) ? "DESTINATARIO" : null,
+      periodoInicio: periodo?.[1] ?? null,
+      periodoFim: periodo?.[2] ?? null,
+      quando: quando ? new Date(Number(quando[3]), Number(quando[2]) - 1, Number(quando[1]), Number(quando[4] ?? 0), Number(quando[5] ?? 0)).getTime() : 0,
+      situacaoTexto: (situacaoLink?.textContent ?? cells[3]?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      situacaoLink,
+    };
+  });
+}
+
+/** Entre as linhas que batem com a tarefa (documento + participante + mês inteiro), a mais recente. */
+function pickRowForTask(rows, task) {
+  const inicio = `01/${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}`;
+  const fim = `${String(new Date(task.competenciaAno, task.competenciaMes, 0).getDate()).padStart(2, "0")}/${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}`;
+  const matches = rows.filter((row) => row.tipoDocumento === task.tipoDocumento && row.papel === task.papel && row.periodoInicio === inicio && row.periodoFim === fim);
+  return matches.sort((a, b) => b.quando - a.quando || a.index - b.index)[0] ?? null;
+}
+
+/** Situação mostrada na aba → estado da tarefa. Texto desconhecido NÃO assume "pronto": devolve DESCONHECIDA. */
+function classifyTrackedSituacao(text) {
+  const normalized = text.toLowerCase();
+  if (/aguardando/.test(normalized)) return "PROCESSANDO_SEFAZ";
+  if (/expirad/.test(normalized)) return "EXPIRADA";
+  if (/sem resultado/.test(normalized)) return "SEM_DOCUMENTOS";
+  if (/com resultado/.test(normalized)) return "PRONTO_PARA_BAIXAR";
+  return "DESCONHECIDA";
+}
+
+async function failTrackedTask(task, motivo) {
+  note(`FALHA ${task.tipoDocumento}/${task.papel}: ${motivo.slice(0, 160)}`);
+  await chrome.runtime.sendMessage({ type: "TRACK_TASK_FAILURE", taskId: task.id, motivo: `${motivo}${describeDiagnostics()}` });
+}
+
+async function trackOneTask(task, row) {
+  const status = classifyTrackedSituacao(row.situacaoTexto);
+  note(`${task.tipoDocumento}/${task.papel}: "${row.situacaoTexto}" -> ${status}`);
+  const sefazReferencia = row.referencia.slice(0, 120);
+
+  if (status === "DESCONHECIDA") {
+    await failTrackedTask(task, `SITUACAO_DESCONHECIDA na aba Solicitações: "${row.situacaoTexto}" (referência: ${row.referencia})`);
+    return;
+  }
+  if (status !== "PRONTO_PARA_BAIXAR") {
+    await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status, sefazReferencia });
+    return;
+  }
+
+  await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status: "PRONTO_PARA_BAIXAR", sefazReferencia });
+  if (!row.situacaoLink) {
+    await failTrackedTask(task, "LINK_DE_DOWNLOAD_NAO_ENCONTRADO na linha da solicitação");
+    return;
+  }
+  const response = await realNavigationClick(row.situacaoLink, { downloadTaskId: task.id });
+  const result = response.result ?? {};
+  // Se abriu um modal em vez de baixar (ex.: aviso de expirada), registra o texto e fecha.
+  const dialog = [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetWidth > 0 && d.offsetHeight > 0);
+  const dialogText = dialog?.textContent.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (dialog) {
+    const fecharX = dialog.querySelector(".ui-dialog-titlebar-close, a.ui-dialog-titlebar-icon");
+    if (fecharX) await realNavigationClick(fecharX);
+  }
+  if (result.ok) {
+    note(`${task.tipoDocumento}/${task.papel}: ZIP capturado (${result.bytes} bytes) e enviado`);
+    return;
+  }
+  await failTrackedTask(task, `DOWNLOAD_FALHOU: ${result.error ?? "sem resultado"}${result.diag ? ` | ${result.diag}` : ""}${dialogText ? ` | modal: "${dialogText}"` : ""}`);
+}
+
+/**
+ * Visita uma empresa: abre a aba Solicitações, acha a linha de cada tarefa pendente (percorrendo as
+ * páginas da tabela) e age — atualiza a situação ou baixa o ZIP. Uma tarefa falhar não encerra a visita.
+ */
+async function trackSolicitacoes(run) {
+  await openSolicitacoesTab();
+  const pending = new Map(run.trackTasks.map((task) => [task.id, task]));
+  let rowsSeen = 0;
+  for (let page = 1; page <= 10 && pending.size; page++) {
+    const rows = readSolicitacaoRows();
+    rowsSeen += rows.length;
+    note(`aba Solicitações, página ${page}: ${rows.length} linha(s); 1ª = "${rows[0]?.texto ?? "-"}"`);
+    for (const task of [...pending.values()]) {
+      const row = pickRowForTask(rows, task);
+      if (!row) continue;
+      pending.delete(task.id);
+      try {
+        await trackOneTask(task, row);
+      } catch (error) {
+        await failTrackedTask(task, `ERRO_NO_ACOMPANHAMENTO: ${error.message}`);
+      }
+    }
+    if (!pending.size) break;
+    const next = document.querySelector(`[id="${SOLICITACOES_TABLE_ID}"] .ui-paginator-next`);
+    if (!next || next.classList.contains("ui-state-disabled")) break;
+    await realNavigationClick(next);
+    await waitForAjaxIdle({ label: "AJAX da próxima página de Solicitações" });
+  }
+  for (const task of pending.values()) {
+    await failTrackedTask(task, `SOLICITACAO_NAO_ENCONTRADA_NO_HISTORICO (${task.tipoDocumento}/${task.papel} ${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}; ${rowsSeen} linha(s) lidas)`);
+  }
+  await chrome.runtime.sendMessage({ type: "TRACK_NEXT_COMPANY" });
+}
+
 // ---------- Página: solicitacaoExtracaoDfe.xhtml (formulário) ----------
 async function selectParticipante(label) {
   const target = findByExactText("label", label);
@@ -442,6 +563,10 @@ async function fillAndSubmitExtractionForm(run) {
       const cnpjNaTela = readHeaderCnpj();
       if (cnpjNaTela && cnpjNaTela !== run.establishment.cnpj) {
         await reportFailure(`CNPJ na tela (${cnpjNaTela}) não bate com o esperado (${run.establishment.cnpj}) — parando por segurança.`);
+        return;
+      }
+      if (run.mode === "TRACK") {
+        await trackSolicitacoes(run);
         return;
       }
       if (!run.formSubmitted) {

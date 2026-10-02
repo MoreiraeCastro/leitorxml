@@ -200,11 +200,19 @@ async function clearActiveRun() {
 // está parada (visto ao vivo, 2026-10-02: tarefas presas em AUTENTICANDO sem nenhum erro). Diferente
 // do `runExpired` dos content scripts, não depende de uma página recarregar pra disparar.
 const RUN_STALL_MS = 3 * 60 * 1000;
+const TRACK_STALL_MS = 8 * 60 * 1000; // visita a uma empresa pode incluir vários downloads de ZIP
 chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "run-watchdog") return;
   const run = await getActiveRun();
-  if (!run || run.mode === "SWEEP" || !run.taskId || typeof run.startedAt !== "number") return;
+  if (!run || run.mode === "SWEEP" || typeof run.startedAt !== "number") return;
+  if (run.mode === "TRACK") {
+    if (Date.now() - run.startedAt < TRACK_STALL_MS) return;
+    const { lastNote } = await chrome.storage.session.get("lastNote");
+    await failActiveRun(run, `ACOMPANHAMENTO_TRAVADO em ${run.establishment?.razaoSocial}: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar; último passo: "${lastNote?.step ?? "nenhum"}" em ${lastNote?.path ?? "?"}`);
+    return;
+  }
+  if (!run.taskId) return;
   if (Date.now() - run.startedAt < RUN_STALL_MS) return;
   if (run.formSubmitted) {
     // A solicitação já foi criada e registrada como SOLICITADO — só o encadeamento parou. Não derruba a tarefa.
@@ -220,6 +228,34 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // Quantas tarefas seguidas um único clique em "Buscar próxima tarefa" processa. Cada uma cria
 // uma solicitação REAL na SEFAZ — 3 = uma empresa inteira (NF-e Dest., NF-e Emit., NFC-e Emit.).
 const MAX_CHAIN_TASKS = 3;
+
+// Quantas empresas um clique em "Conferir resultados" visita (cada uma pode baixar até 3 ZIPs).
+const MAX_TRACK_COMPANIES = 3;
+
+/** Leva a aba pra Página Principal do portal: a aba informada, senão uma já aberta no portal, senão uma nova. */
+async function navigateToHome(preferredTabId) {
+  if (preferredTabId != null) {
+    await chrome.tabs.update(preferredTabId, { active: true, url: HOME_URL });
+    return;
+  }
+  const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
+  if (tab) await chrome.tabs.update(tab.id, { active: true, url: HOME_URL });
+  else await chrome.tabs.create({ url: HOME_URL });
+}
+
+/** Reivindica a próxima empresa com solicitações a acompanhar e começa a corrida de acompanhamento nela. */
+async function claimNextTrackingCompany(visited, count, tabId) {
+  const query = visited.length ? `?exclude=${visited.join(",")}` : "";
+  const { establishment, accessContext, tasks } = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento${query}`)).json();
+  if (!establishment) {
+    await clearActiveRun();
+    return null;
+  }
+  const run = { mode: "TRACK", step: "NAVIGATE_HOME", startedAt: Date.now(), establishment, accessContext, trackTasks: tasks, trackVisited: visited, trackCount: count };
+  await setActiveRun(run);
+  await navigateToHome(tabId);
+  return run;
+}
 
 /** Fim do lote: limpa a corrida e volta a aba pra Página Principal do portal (onde fica o card "AUTO Fisco Fácil" / modal de procurações). */
 async function finishBatchAndReturnHome(tabId) {
@@ -299,7 +335,8 @@ async function reportEvento(taskId, body) {
   });
 }
 
-async function reportFalha(taskId, motivo) {
+/** Só registra a falha da tarefa no backend (não mexe na corrida ativa) — usado no acompanhamento, onde uma tarefa falhar não encerra a visita à empresa. */
+async function postFalha(taskId, motivo) {
   // O backend recusa (400) motivo > 4000 chars e a falha sumiria sem rastro,
   // deixando a tarefa presa em AUTENTICANDO (visto ao vivo, 2026-10-02).
   await apiFetch(`/api/leitorxml/extensao/tarefas/${taskId}/falha`, {
@@ -307,7 +344,21 @@ async function reportFalha(taskId, motivo) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ motivo: motivo.slice(0, 3900) }),
   });
+}
+
+async function reportFalha(taskId, motivo) {
+  await postFalha(taskId, motivo);
   await clearActiveRun();
+}
+
+/** Falha da corrida ativa: no acompanhamento/varredura não há UMA tarefa (guarda o erro pro popup); na solicitação, falha a tarefa. */
+async function failActiveRun(run, motivo) {
+  if (run.mode === "TRACK" || run.mode === "SWEEP" || !run.taskId) {
+    await chrome.storage.session.set({ lastSweepError: motivo.slice(0, 3900) });
+    await clearActiveRun();
+    return;
+  }
+  await reportFalha(run.taskId, motivo);
 }
 
 async function reportProcuracaoIndice(entries) {
@@ -316,6 +367,81 @@ async function reportProcuracaoIndice(entries) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entries }),
   });
+}
+
+/** Envia o ZIP de uma tarefa pro backend (valida assinatura "PK" antes — um HTML de erro não pode virar "arquivo coletado"). */
+async function uploadTaskZip(taskId, bytes) {
+  if (!(bytes[0] === 0x50 && bytes[1] === 0x4b)) {
+    const preview = new TextDecoder().decode(bytes.slice(0, 120)).replace(/\s+/g, " ");
+    throw new Error(`RESPOSTA_NAO_E_ZIP (${bytes.length} bytes): "${preview}"`);
+  }
+  const { apiBaseUrl, apiToken } = await getSettings();
+  const form = new FormData();
+  form.append("file", new Blob([bytes], { type: "application/zip" }), "extracao.zip");
+  const response = await fetch(`${apiBaseUrl}/api/leitorxml/extensao/tarefas/${taskId}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiToken}` },
+    body: form,
+  });
+  if (!response.ok) throw new Error(`UPLOAD_FAILED_${response.status}: ${(await response.text()).slice(0, 200)}`);
+  return response.json();
+}
+
+/**
+ * Clica (CDP) e captura os BYTES do ZIP na hora, interceptando a resposta de rede (Fetch domain,
+ * estágio Response) — o download do Fisco Fácil provavelmente sai de um POST de formulário, e reabrir a
+ * URL depois (chrome.downloads + refetch) devolveria outra coisa. Depois de enviar pro backend, bloqueia a
+ * resposta pra o Chrome não salvar uma cópia solta na pasta Downloads. Devolve { ok, ... } sempre.
+ */
+async function captureDownloadViaCdp(tabId, x, y, taskId) {
+  const seen = [];
+  const state = { captured: false };
+  let finish;
+  const finished = new Promise((resolve) => (finish = resolve));
+
+  const onEvent = async (source, method, params) => {
+    if (source.tabId !== tabId || method !== "Fetch.requestPaused") return;
+    const headerValue = (name) => params.responseHeaders?.find((header) => header.name.toLowerCase() === name)?.value ?? "";
+    const disposition = headerValue("content-disposition");
+    const type = headerValue("content-type");
+    if (seen.length < 8) seen.push(`${params.responseStatusCode ?? "?"} ${type.slice(0, 40)} ${disposition.slice(0, 40)} ${String(params.request?.url ?? "").split("/").pop()?.slice(0, 40)}`);
+    const looksLikeDownload = /attachment/i.test(disposition) || /zip|octet-stream/i.test(type);
+    if (!looksLikeDownload || state.captured) {
+      await chrome.debugger.sendCommand({ tabId }, "Fetch.continueRequest", { requestId: params.requestId }).catch(() => {});
+      return;
+    }
+    state.captured = true;
+    try {
+      const body = await chrome.debugger.sendCommand({ tabId }, "Fetch.getResponseBody", { requestId: params.requestId });
+      const bytes = body.base64Encoded ? Uint8Array.from(atob(body.body), (char) => char.charCodeAt(0)) : new TextEncoder().encode(body.body);
+      const uploaded = await uploadTaskZip(taskId, bytes);
+      finish({ ok: true, bytes: bytes.length, uploaded });
+    } catch (error) {
+      finish({ ok: false, error: error.message });
+    } finally {
+      await chrome.debugger.sendCommand({ tabId }, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" }).catch(() => {});
+    }
+  };
+
+  await chrome.debugger.attach({ tabId }, "1.3");
+  chrome.debugger.onEvent.addListener(onEvent);
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Response" }] });
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "DOWNLOAD_NAO_CAPTURADO_EM_60S" }), 60000));
+    const result = await Promise.race([finished, timeout]);
+    if (!result.ok && result.error?.startsWith("DOWNLOAD_NAO_CAPTURADO")) {
+      const [latest] = await chrome.downloads.search({ orderBy: ["-startTime"], limit: 1 });
+      result.diag = `respostas vistas: [${seen.join(" | ")}]; último download do Chrome: ${latest ? `${latest.mime} ${String(latest.filename).split(/[\\/]/).pop()} ${latest.state}` : "nenhum"}`;
+    }
+    return result;
+  } finally {
+    chrome.debugger.onEvent.removeListener(onEvent);
+    await chrome.debugger.sendCommand({ tabId }, "Fetch.disable").catch(() => {});
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+  }
 }
 
 /** Reenvia (via fetch) a URL que o Chrome resolveu pro download disparado ao clicar num resultado pronto, pra pegar os bytes direto em memória — sem depender de ler arquivo do disco. */
@@ -382,7 +508,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "REPORT_FAILURE": {
           const run = await getActiveRun();
-          if (run) await reportFalha(run.taskId, message.motivo);
+          if (run) await failActiveRun(run, message.motivo);
           sendResponse({ ok: true });
           break;
         }
@@ -451,7 +577,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!run?.discovery) return sendResponse({ ok: false, error: "NO_DISCOVERY_IN_PROGRESS" });
           const nextCursor = run.discovery.cursor + 1;
           if (nextCursor >= run.discovery.queue.length) {
-            await reportFalha(run.taskId, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`);
+            await failActiveRun(run, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`);
             sendResponse({ ok: true, done: true });
             break;
           }
@@ -521,8 +647,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "EXPECT_DOWNLOAD": {
           const run = await getActiveRun();
-          if (run) expectedDownloadTaskId = run.taskId;
+          if (run) expectedDownloadTaskId = message.taskId ?? run.taskId;
           sendResponse({ ok: true });
+          break;
+        }
+        case "START_TRACKING": {
+          const existing = await getActiveRun();
+          if (existing) return sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
+          await chrome.storage.session.remove("lastSweepError");
+          sendResponse({ ok: true, run: await claimNextTrackingCompany([], 1, sender.tab?.id) });
+          break;
+        }
+        case "TRACK_NEXT_COMPANY": {
+          const previous = await getActiveRun();
+          if (!previous || previous.mode !== "TRACK") return sendResponse({ ok: false, error: "NO_TRACKING_RUN" });
+          const visited = [...(previous.trackVisited ?? []), previous.establishment.id];
+          if (visited.length >= MAX_TRACK_COMPANIES) {
+            await finishBatchAndReturnHome(sender.tab?.id);
+            return sendResponse({ ok: true, done: true, reason: "LIMITE_DO_LOTE" });
+          }
+          const run = await claimNextTrackingCompany(visited, visited.length + 1, sender.tab?.id);
+          if (!run) await finishBatchAndReturnHome(sender.tab?.id);
+          sendResponse({ ok: true, done: !run, run });
+          break;
+        }
+        case "TRACK_REPORT": {
+          await reportEvento(message.taskId, { status: message.status, ...(message.sefazReferencia ? { sefazReferencia: message.sefazReferencia } : {}) });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "TRACK_TASK_FAILURE": {
+          await postFalha(message.taskId, message.motivo);
+          sendResponse({ ok: true });
+          break;
+        }
+        case "CAPTURE_DOWNLOAD_CLICK": {
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
+          sendResponse({ ok: true, result: await captureDownloadViaCdp(sender.tab.id, message.x, message.y, message.taskId) });
           break;
         }
         case "CHAIN_NEXT_TASK": {
