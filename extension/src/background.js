@@ -491,6 +491,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "HIDE_LOADING":
+        case "DESCRIBE_LOADING": {
+          // O overlay #loading do site pode ficar preso visível depois do AJAX (visto ao vivo,
+          // 2026-10-02) e cobrir o alvo do clique. HIDE_LOADING chama o hideLoading() do próprio
+          // site; DESCRIBE_LOADING devolve o código das funções pra diagnóstico.
+          if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
+          const [injection] = await chrome.scripting.executeScript({
+            target: { tabId: sender.tab.id },
+            world: "MAIN",
+            args: [message.type],
+            func: (kind) => {
+              const source = (fn) => (typeof fn === "function" ? String(fn).slice(0, 600) : "não é função global");
+              if (kind === "DESCRIBE_LOADING") {
+                return {
+                  show: source(window.showLoading),
+                  hide: source(window.hideLoading),
+                  container: source(window.getContainer),
+                  overlay: document.getElementById("loading")?.outerHTML.slice(0, 300) ?? "sem #loading",
+                };
+              }
+              if (typeof window.hideLoading !== "function") return { called: false, reason: "hideLoading não é função global" };
+              try {
+                window.hideLoading();
+                return { called: true };
+              } catch (error) {
+                return { called: true, threw: `${error?.name}: ${error?.message}` };
+              }
+            },
+          });
+          sendResponse({ ok: true, result: injection?.result });
+          break;
+        }
         case "CALL_ONCLICK": {
           // Chama o onclick inline do elemento direto no mundo principal, devolvendo
           // a exceção se houver — separa "o onclick do site quebra" de "o clique não chegou".

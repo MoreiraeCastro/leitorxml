@@ -150,6 +150,32 @@ async function waitForAjaxIdle(options = {}) {
   await waitFor(isIdle, waitOptions);
 }
 
+/**
+ * O overlay #loading cobre a tela inteira enquanto visível e engole o clique.
+ * Visto ao vivo (2026-10-02): ficou preso visível depois do AJAX do Filtrar já
+ * ter terminado. Espera sumir; se estiver preso (sem XHR pendente), chama o
+ * hideLoading() do próprio site; se mesmo assim não sumir, falha com o código
+ * das funções do site pra diagnóstico.
+ */
+async function clearLoadingOverlayCovering() {
+  const overlay = document.getElementById("loading");
+  const isShown = () => !!overlay && !overlay.classList.contains("hidden");
+  if (!isShown()) return;
+  try {
+    await waitFor(() => !isShown(), { timeoutMs: 6000, label: "overlay #loading sumir antes do clique" });
+    return;
+  } catch {}
+  await waitFor(() => !hasPendingXhr(), { timeoutMs: 20000, label: "XHR pendente terminar antes do clique" }).catch(() => {});
+  if (!isShown()) return;
+  const hidden = await chrome.runtime.sendMessage({ type: "HIDE_LOADING" });
+  note(`overlay #loading preso — chamei hideLoading(): ${JSON.stringify(hidden?.result)}`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  if (isShown()) {
+    const info = await chrome.runtime.sendMessage({ type: "DESCRIBE_LOADING" });
+    throw new Error(`OVERLAY_LOADING_PRESO: ${JSON.stringify(info?.result)}`);
+  }
+}
+
 /** Verdadeiro se alguma XHR do site registrada (ver `ensurePageGlobals`) ainda não terminou. */
 function hasPendingXhr() {
   try {
@@ -215,6 +241,7 @@ async function realNavigationClick(el) {
   // terminar, o clique via CDP acerta coordenadas erradas sem erro nenhum.
   el.scrollIntoView({ block: "center", behavior: "instant" });
   await new Promise((resolve) => setTimeout(resolve, 300)); // deixa o layout assentar antes de medir a posição na tela
+  await clearLoadingOverlayCovering();
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) {
     throw new Error(`REAL_CLICK_ALVO_SEM_TAMANHO: elemento com rect ${JSON.stringify(rect)} — provavelmente invisível ou fora da tela`);
