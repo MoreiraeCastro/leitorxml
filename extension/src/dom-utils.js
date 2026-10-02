@@ -133,14 +133,30 @@ function waitFor(check, { timeoutMs = 15000, intervalMs = 150, label = "condiç�
  * o site sinaliza fim de requisição AJAX, sem precisar ganchar em jQuery.
  */
 async function waitForAjaxIdle(options = {}) {
-  const isHidden = () => {
+  // Só o #loading escondido não basta: o overlay pode ainda não ter aparecido (ou já
+  // ter sumido) enquanto a XHR segue pendente — visto ao vivo, 2026-10-02: a busca foi
+  // dada como terminada com a requisição do Filtrar `pendente`, e a tabela foi lida
+  // antes da resposta (sempre a lista inteira). Também espera as XHRs registradas por
+  // `ensurePageGlobals` (background.js) terminarem.
+  const isIdle = () => {
     const el = document.getElementById("loading");
-    return !el || el.classList.contains("hidden");
+    const hidden = !el || el.classList.contains("hidden");
+    return hidden && !hasPendingXhr();
   };
-  await waitFor(isHidden, options);
+  const waitOptions = { timeoutMs: 30000, ...options };
+  await waitFor(isIdle, waitOptions);
   // debounce: garante que não é só um instante entre duas chamadas AJAX encadeadas.
   await new Promise((resolve) => setTimeout(resolve, 250));
-  await waitFor(isHidden, options);
+  await waitFor(isIdle, waitOptions);
+}
+
+/** Verdadeiro se alguma XHR do site registrada (ver `ensurePageGlobals`) ainda não terminou. */
+function hasPendingXhr() {
+  try {
+    return JSON.parse(document.documentElement.dataset.leitorxmlXhr || "[]").some((entry) => entry.status === "pendente");
+  } catch {
+    return false;
+  }
 }
 
 /** Acha o primeiro elemento cujo texto visível bate exatamente (após trim) com `text`, dentro de `root`. */
