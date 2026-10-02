@@ -114,6 +114,18 @@ async function ensurePageGlobals(tabId) {
       const writeLog = (log) => {
         root.dataset.leitorxmlXhr = JSON.stringify(log.slice(-10));
       };
+      // Cliques/submits que a página de fato recebe (alvo e se é "trusted") — separa
+      // "o clique do CDP não chegou/caiu em outro elemento" de "chegou mas o onclick não rodou".
+      const logEvent = (event) => {
+        const el = event.target;
+        let log = [];
+        try {
+          log = JSON.parse(root.dataset.leitorxmlEvents || "[]");
+        } catch {}
+        log.push({ type: event.type, tag: el?.tagName, id: el?.id || undefined, cls: String(el?.className ?? "").slice(0, 40), trusted: event.isTrusted });
+        root.dataset.leitorxmlEvents = JSON.stringify(log.slice(-10));
+      };
+      for (const type of ["mousedown", "click", "submit"]) document.addEventListener(type, logEvent, true);
       const originalOpen = XMLHttpRequest.prototype.open;
       const originalSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {

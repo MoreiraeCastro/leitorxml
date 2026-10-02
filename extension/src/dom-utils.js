@@ -35,6 +35,7 @@ function describeDiagnostics() {
 /** Zera o registro de XHRs do site (gravado por `ensurePageGlobals` em background.js) — chamar antes de uma ação pra ver só as requisições dela. */
 function clearXhrLog() {
   delete document.documentElement.dataset.leitorxmlXhr;
+  delete document.documentElement.dataset.leitorxmlEvents;
 }
 
 /** Resume as XHRs registradas desde o último `clearXhrLog()`: alvo, parâmetros enviados, status e componentes atualizados. */
@@ -43,8 +44,15 @@ function describeXhrLog() {
   try {
     log = JSON.parse(document.documentElement.dataset.leitorxmlXhr || "[]");
   } catch {}
-  if (!log.length) return "nenhuma requisição AJAX disparada";
-  return log.map((entry) => `${entry.method} ${entry.url} ${JSON.stringify(entry.params)} -> ${entry.status}${entry.updates?.length ? ` atualizou [${entry.updates.join(",")}]` : ""}`).join(" ; ");
+  let events = [];
+  try {
+    events = JSON.parse(document.documentElement.dataset.leitorxmlEvents || "[]");
+  } catch {}
+  const eventsText = events.length
+    ? `eventos recebidos pela página: ${events.map((e) => `${e.type}@${e.tag}${e.id ? `#${e.id}` : ""}${e.trusted ? "" : "(sintético)"}`).join(", ")}`
+    : "página não recebeu nenhum mousedown/click/submit";
+  if (!log.length) return `nenhuma requisição AJAX disparada; ${eventsText}`;
+  return `${log.map((entry) => `${entry.method} ${entry.url} ${JSON.stringify(entry.params)} -> ${entry.status}${entry.updates?.length ? ` atualizou [${entry.updates.join(",")}]` : ""}`).join(" ; ")}; ${eventsText}`;
 }
 
 /** Observa o overlay #loading: `stop()` devolve true se ele chegou a aparecer (prova de que o clique disparou algo). */
@@ -182,6 +190,14 @@ async function realNavigationClick(el) {
   }
   const x = Math.round(rect.left + rect.width / 2);
   const y = Math.round(rect.top + rect.height / 2);
+  // Confere que o elemento no ponto é o alvo (ou algo dentro dele): se outro
+  // elemento cobrir o ponto, ou o ponto cair fora da janela, o CDP "clica com
+  // sucesso" em outra coisa e nada acontece — nunca clicar às cegas.
+  const topmost = document.elementFromPoint(x, y);
+  if (!topmost || !(el === topmost || el.contains(topmost))) {
+    const describe = (node) => (node ? `${node.tagName}${node.id ? `#${node.id}` : ""}.${String(node.className ?? "").slice(0, 40)}` : "nada (fora da janela)");
+    throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}]`);
+  }
   const response = await chrome.runtime.sendMessage({ type: "REAL_CLICK", x, y });
   if (!response?.ok) throw new Error(response?.error ?? "REAL_CLICK_FALHOU");
 }
