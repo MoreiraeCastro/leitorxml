@@ -273,7 +273,13 @@ function describeExtractionForm() {
   return [...form.querySelectorAll("input,select")]
     .map((el) => `${el.tagName.toLowerCase()}${el.type ? `:${el.type}` : ""}#${el.id || el.name}=${String(el.value).slice(0, 20)}${el.checked ? " ✓" : ""} ${el.offsetWidth}x${el.offsetHeight}`)
     .join(" | ")
-    .concat(` | botões visíveis: ${[...document.querySelectorAll("button, a.ui-button")].filter((el) => el.offsetWidth > 0).map((el) => el.textContent.trim().slice(0, 25)).join(", ")}`);
+    .concat(` | botões visíveis: ${[...document.querySelectorAll("button, a, input[type=button], input[type=submit], [role=button]")].filter((el) => el.offsetWidth > 0).map((el) => (el.value || el.textContent).trim().slice(0, 25)).filter(Boolean).join(", ")}`)
+    .concat(
+      ` | diálogos visíveis: ${[...document.querySelectorAll(".ui-dialog, .modal, [role=dialog], [class*=dialog], [class*=modal]")]
+        .filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0)
+        .map((el) => `${el.tagName}.${String(el.className).slice(0, 40)}: "${el.textContent.replace(/\s+/g, " ").trim().slice(0, 100)}"`)
+        .join(" ; ")}`,
+    );
 }
 
 async function fillAndSubmitExtractionForm(run) {
@@ -310,14 +316,28 @@ async function fillAndSubmitExtractionForm(run) {
 
   // O site NÃO navega ao confirmar: mostra o modal "Solicitação de Extração de DFe — O resultado
   // será apresentado na aba Solicitações" com um botão "Fechar" (confirmado ao vivo, 2026-10-02).
-  const findVisibleButton = (text) => [...document.querySelectorAll("button, a")].find((el) => el.textContent.trim() === text && el.offsetWidth > 0 && el.offsetHeight > 0);
+  const findVisibleButton = findVisibleClickableByText;
   const fechar = await waitFor(() => findVisibleButton("Fechar"), { timeoutMs: 15000, label: 'modal "Solicitação de Extração de DFe" (botão Fechar) aparecer' });
-  note("modal da solicitação apareceu — solicitação criada na SEFAZ");
+  // Dois modais vistos ao vivo (2026-10-02), ambos só com "Fechar": sucesso ("O resultado será
+  // apresentado na aba Solicitações") e duplicado ("Já foi realizada solicitação semelhante em
+  // 10/09/2026. Consulte a solicitação NF-e - Emitente - Período: ..."). Qualquer modal de aviso é
+  // fechado e o fluxo segue; só falha se o texto indicar erro de verdade.
+  let dialog = fechar.closest(".ui-dialog, .modal, [role='dialog']");
+  for (let node = fechar, levels = 0; !dialog && node.parentElement && levels < 6; levels++) {
+    node = node.parentElement;
+    if (node.textContent.trim().length > 40) dialog = node; // 1º ancestral com texto além do próprio "Fechar"
+  }
+  const modalText = (dialog?.textContent ?? "").replace(/\s+/g, " ").trim();
+  note(`modal da solicitação: "${modalText.slice(0, 200)}"`);
+  if (/erro|inv[aá]lid|n[aã]o foi poss[ií]vel|falha|indispon/i.test(modalText)) {
+    throw new Error(`MODAL_DE_ERRO_NA_SOLICITACAO: ${modalText.slice(0, 300)}`);
+  }
+  const solicitacaoExistente = modalText.match(/Consulte a solicita[cç][aã]o (.+?) no hist[oó]rico/i)?.[1];
 
   // Marca AGORA, antes de qualquer navegação: o script desta página é destruído quando o navegador
   // sai dela, então qualquer coisa depois do clique em "Voltar" nunca rodaria.
   await setRunFlag({ formSubmitted: true });
-  await reportStatus("SOLICITADO");
+  await reportStatus("SOLICITADO", solicitacaoExistente ? { sefazReferencia: solicitacaoExistente.slice(0, 120) } : {});
 
   await realNavigationClick(fechar);
   await waitForAjaxIdle({ label: "AJAX ao fechar o modal da solicitação" });
@@ -391,8 +411,10 @@ async function fillAndSubmitExtractionForm(run) {
         await openExtractionForm();
         return; // navegação pro formulário.
       }
-      await openSolicitacoesTab();
-      await readLatestSolicitacaoAndAct(run);
+      // Solicitação já criada e registrada como SOLICITADO: segue direto pra próxima tarefa (a
+      // conferência do resultado/download na aba Solicitações é uma etapa posterior, filtrada pela
+      // referência — a última linha da aba nem sempre é a desta tarefa, ex.: solicitação duplicada).
+      await chrome.runtime.sendMessage({ type: "CHAIN_NEXT_TASK" });
       return;
     }
   } catch (error) {

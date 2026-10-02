@@ -231,6 +231,20 @@ function findByExactText(selector, text, root = document) {
   return [...root.querySelectorAll(selector)].find((el) => el.textContent.trim() === normalized) ?? null;
 }
 
+/**
+ * Elemento visível mais interno cujo texto (ou value, em input de botão) é exatamente `text` —
+ * qualquer tipo de elemento clicável (button, a, input, span, div...), não só <button>/<a>: o
+ * "Fechar" dos modais do Fisco Fácil não foi achado por `button, a` ao vivo (2026-10-02).
+ */
+function findVisibleClickableByText(text) {
+  const normalized = text.trim();
+  const matches = [...document.querySelectorAll("button, a, input, span, div, label")].filter((el) => {
+    const content = el.tagName === "INPUT" ? el.value : el.textContent;
+    return content?.trim() === normalized && el.offsetWidth > 0 && el.offsetHeight > 0;
+  });
+  return matches.find((el) => !matches.some((other) => other !== el && el.contains(other))) ?? null;
+}
+
 /** Acha todos os elementos cujo texto visível contém `text` (case-insensitive), dentro de `root`. */
 function findAllByText(selector, text, root = document) {
   const normalized = text.trim().toLowerCase();

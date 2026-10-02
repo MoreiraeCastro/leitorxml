@@ -197,7 +197,11 @@ async function clearActiveRun() {
 }
 
 /** Busca a próxima tarefa e prepara a corrida: decide se dá pra continuar na mesma empresa (economiza navegação) ou se precisa voltar pra Página Principal e reentrar por procuração. */
-async function claimNextTaskAndPrepare() {
+// Quantas tarefas seguidas um único clique em "Buscar próxima tarefa" processa. Cada uma cria
+// uma solicitação REAL na SEFAZ — 3 = uma empresa inteira (NF-e Dest., NF-e Emit., NFC-e Emit.).
+const MAX_CHAIN_TASKS = 3;
+
+async function claimNextTaskAndPrepare(chainCount = 1) {
   const previousRun = await getActiveRun();
   const response = await apiFetch("/api/leitorxml/extensao/proxima-tarefa");
   const { task, establishment, accessContext } = await response.json();
@@ -226,6 +230,7 @@ async function claimNextTaskAndPrepare() {
     // dom-utils.js) e falha alto se a corrida já passou do tempo esperado,
     // em vez de ficar presa silenciosamente até alguém notar e resetar no banco.
     startedAt: Date.now(),
+    chainCount,
   };
   await setActiveRun(run);
 
@@ -489,6 +494,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const run = await getActiveRun();
           if (run) expectedDownloadTaskId = run.taskId;
           sendResponse({ ok: true });
+          break;
+        }
+        case "CHAIN_NEXT_TASK": {
+          // A solicitação da tarefa atual já foi criada e registrada — segue pra próxima (mesma
+          // empresa quando houver: pula a reentrada por procuração), até MAX_CHAIN_TASKS por clique.
+          const previous = await getActiveRun();
+          if (!previous) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          const chainCount = previous.chainCount ?? 1;
+          if (chainCount >= MAX_CHAIN_TASKS) {
+            await clearActiveRun();
+            sendResponse({ ok: true, done: true, reason: "LIMITE_DO_LOTE" });
+            break;
+          }
+          const run = await claimNextTaskAndPrepare(chainCount + 1);
+          sendResponse({ ok: true, done: !run, run });
           break;
         }
         case "HIDE_LOADING":
