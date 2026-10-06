@@ -137,7 +137,7 @@ const CANDIDATE_COLUMNS =
 async function fetchClaimCandidates(db: SupabaseClient, onlyEstablishmentId?: string) {
   let query = db.from("xml_collection_tasks").select(CANDIDATE_COLUMNS).in("status", ["AGENDADA", "NA_FILA"]);
   if (onlyEstablishmentId) query = query.eq("establishment_id", onlyEstablishmentId);
-  const { data, error } = await query.order("competencia_ano", { ascending: true }).order("competencia_mes", { ascending: true }).limit(50);
+  const { data, error } = await query.order("competencia_ano", { ascending: true }).order("competencia_mes", { ascending: true }).order("updated_at", { ascending: true }).limit(50);
   if (error) throw new Error("NEXT_TASK_LOOKUP_FAILED");
   return data ?? [];
 }
