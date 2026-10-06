@@ -40,6 +40,19 @@ async function goBackWithFreshLoad(tabId) {
   });
 }
 
+const COMPANY_PAGE_URL = "https://fisco-facil.fazenda.rj.gov.br/SATI-FiscoFacil/privado/mainAbasContribuinte.xhtml";
+
+/**
+ * Depois de baixar um ZIP, volta pro painel da empresa ABRINDO a página direto, sem usar o histórico. A captura do ZIP
+ * cancela a requisição do formulário de download (pra o Chrome não salvar uma cópia solta), e isso deixa a aba numa
+ * página de erro (ERR_BLOCKED_BY_CLIENT) — "voltar" dali cai na página de erro ou na de detalhe e a corrida perde o fio
+ * (visto ao vivo, 2026-10-06). A empresa escolhida fica na sessão do site, então a navegação nova funciona; se o site
+ * devolver a lista de empresas, o content script já sabe buscar a empresa de novo.
+ */
+async function openCompanyPage(tabId) {
+  await chrome.tabs.update(tabId, { url: COMPANY_PAGE_URL });
+}
+
 /**
  * Clique de verdade via Chrome DevTools Protocol (Input.dispatchMouseEvent),
  * não `dispatchEvent()` — o navegador só conta isso como "ativação de
@@ -325,10 +338,8 @@ async function workNow({ tabId, confirmRequest = false }) {
   const requestWork = (summary.agendadas ?? 0) > 0;
   if (!trackWork && !requestWork) return { ok: true, nothing: true, summary };
   if (!trackWork && !confirmRequest) return { ok: true, needsConfirm: { agendadas: summary.agendadas }, summary };
-  let workTabId = tabId ?? (await findWorkTabId());
-  const { robotMode = false } = await chrome.storage.local.get("robotMode");
-  if (workTabId == null && robotMode) workTabId = await openWorkTab();
-  if (workTabId == null) return { ok: false, error: "PRECISA_ABRIR_FISCO", summary };
+  // Quem clicou quer trabalhar: sem aba do Fisco Fácil, abre uma (o Chrome mostra a escolha do certificado).
+  const workTabId = tabId ?? (await findWorkTabId()) ?? (await openWorkTab());
   const outcome = trackWork ? await startTrackingBelt({ tabId: workTabId, onlyDue: true }) : await startRequestBelt({ tabId: workTabId });
   return { ...outcome, started: trackWork ? "TRACK" : "REQUEST", summary };
 }
@@ -348,8 +359,9 @@ async function pairFromPortal(message, sender) {
 
 /** Modo PC robô: sem nenhuma aba do Fisco Fácil aberta, abre uma (o Chrome escolhe o certificado sozinho por política do Windows). */
 async function openWorkTab() {
-  const tab = await chrome.tabs.create({ url: HOME_URL, active: true });
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  // Aba em branco: quem a leva ao portal é a própria esteira (navigateToHome), numa navegação só — navegar duas vezes
+  // seguidas reabriria a janela de escolha do certificado.
+  const tab = await chrome.tabs.create({ url: "about:blank", active: true });
   return tab.id ?? null;
 }
 
@@ -711,7 +723,14 @@ async function captureDownloadViaCdp(tabId, x, y, taskId) {
     } catch (error) {
       finish({ ok: false, error: error.message });
     } finally {
-      await chrome.debugger.sendCommand({ tabId }, "Fetch.failRequest", { requestId: params.requestId, errorReason: "BlockedByClient" }).catch(() => {});
+      // 204 (sem conteúdo): pro navegador é "não há nada pra mostrar", então a página continua onde está — sem salvar
+      // uma cópia solta do ZIP e SEM a tela de erro. O antigo failRequest("BlockedByClient") trocava a página por
+      // ERR_BLOCKED_BY_CLIENT, e com a página trocada o script da extensão morria no meio do fluxo (visto ao vivo, 2026-10-06).
+      await chrome.debugger.sendCommand({ tabId }, "Fetch.fulfillRequest", { requestId: params.requestId, responseCode: 204, responseHeaders: [] }).catch(() => {});
+      // O Chrome já tinha registrado o clique como um download e o marca como "arquivo não estava disponível": sem nenhum
+      // arquivo salvo, mas fica uma linha de erro no histórico de transferências. Apaga essas linhas (só as interrompidas
+      // do resultadoExtracaoDfe) pra ninguém achar que deu erro.
+      setTimeout(() => chrome.downloads.erase({ urlRegex: "resultadoExtracaoDfe", state: "interrupted" }).catch(() => {}), 2500);
     }
   };
 
@@ -982,7 +1001,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "TRACK_GO_BACK": {
           // Da página de detalhe da solicitação de volta pro painel da empresa (com reload de verdade, sem bfcache).
-          if (sender.tab) await goBackWithFreshLoad(sender.tab.id);
+          if (sender.tab) await openCompanyPage(sender.tab.id);
           sendResponse({ ok: true });
           break;
         }
