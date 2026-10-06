@@ -192,7 +192,7 @@ export async function claimNextTask(db: SupabaseClient, userId: string, now: Dat
 }
 
 const TRACKING_COLUMNS =
-  "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,sefaz_referencia,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
+  "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,sefaz_referencia,ultima_verificacao_at,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
 
 /**
  * Próxima empresa a ACOMPANHAR: a que tem tarefas já solicitadas (SOLICITADO / PROCESSANDO_SEFAZ / PRONTO_PARA_BAIXAR) há mais
@@ -201,7 +201,31 @@ const TRACKING_COLUMNS =
  * mecanismo da fila de solicitações); `excludeEstablishmentIds` evita voltar numa empresa já visitada no
  * mesmo lote (tarefas ainda "aguardando processamento" continuam pendentes e seriam reclamadas de novo).
  */
-export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; onlyEstablishmentId?: string; now?: Date } = {}) {
+/**
+ * Acompanhamento AUTOMÁTICO: uma solicitação só entra na vez se (a) já está pronta pra baixar — isso nunca espera —
+ * ou (b) não foi conferida nas últimas `staleHours` horas. Sem isso o automático voltaria no Fisco Fácil a cada
+ * rodada pra ver "Aguardando processamento" de pedidos que levam dias.
+ */
+export function isDueForTracking(row: { status: string; ultima_verificacao_at: string | null }, staleHours: number | undefined, now: Date) {
+  if (staleHours === undefined || row.status === "PRONTO_PARA_BAIXAR" || !row.ultima_verificacao_at) return true;
+  return now.getTime() - new Date(row.ultima_verificacao_at).getTime() >= staleHours * 3600_000;
+}
+
+/** Quanto há a conferir/baixar agora, SEM travar empresa nenhuma (a extensão consulta isso pra decidir se vale abrir o Fisco Fácil). */
+export async function summarizeTrackingNeeds(db: SupabaseClient, options: { staleHours?: number; now?: Date } = {}) {
+  const now = options.now ?? new Date();
+  const { data, error } = await db.from("xml_collection_tasks").select("id,establishment_id,status,ultima_verificacao_at").in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]).limit(2000);
+  if (error) throw new Error("TRACKING_SUMMARY_FAILED");
+  const due = (data ?? []).filter((row) => isDueForTracking(row, options.staleHours, now));
+  return {
+    paraBaixar: due.filter((row) => row.status === "PRONTO_PARA_BAIXAR").length,
+    aConferir: due.filter((row) => row.status !== "PRONTO_PARA_BAIXAR").length,
+    empresas: new Set(due.map((row) => row.establishment_id)).size,
+    aguardandoSefaz: (data ?? []).length - due.length,
+  };
+}
+
+export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; onlyEstablishmentId?: string; staleHours?: number; now?: Date } = {}) {
   const now = options.now ?? new Date();
   const excluded = new Set(options.excludeEstablishmentIds ?? []);
   let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]);
@@ -212,7 +236,7 @@ export async function claimNextTrackingBatch(db: SupabaseClient, userId: string,
 
   const byEstablishment = new Map<string, NonNullable<typeof data>>();
   for (const row of data ?? []) {
-    if (excluded.has(row.establishment_id)) continue;
+    if (excluded.has(row.establishment_id) || !isDueForTracking(row, options.staleHours, now)) continue;
     byEstablishment.set(row.establishment_id, [...(byEstablishment.get(row.establishment_id) ?? []), row]);
   }
   for (const [establishmentId, rows] of byEstablishment) {

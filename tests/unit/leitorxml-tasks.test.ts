@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTasksForEstablishments, escalateStaleProcessing, generateMonthlyTasks, previousClosedCompetencia } from "@/lib/leitorxml/tasks";
+import { createTasksForEstablishments, escalateStaleProcessing, generateMonthlyTasks, isDueForTracking, previousClosedCompetencia } from "@/lib/leitorxml/tasks";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 describe("previousClosedCompetencia", () => {
@@ -77,5 +77,24 @@ describe("escalateStaleProcessing", () => {
   it("propaga falha na atualização", async () => {
     const db = fakeDb({ xml_collection_tasks: [{ data: null, error: { message: "db down" } }] });
     await expect(escalateStaleProcessing(db)).rejects.toThrow("STALE_TASKS_ESCALATION_FAILED");
+  });
+});
+
+describe("isDueForTracking (acompanhamento automático)", () => {
+  const now = new Date("2026-10-06T12:00:00Z");
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3600_000).toISOString();
+
+  it("sem filtro de idade (manual), tudo entra na vez", () => {
+    expect(isDueForTracking({ status: "SOLICITADO", ultima_verificacao_at: hoursAgo(1) }, undefined, now)).toBe(true);
+  });
+
+  it("pronta pra baixar nunca espera", () => {
+    expect(isDueForTracking({ status: "PRONTO_PARA_BAIXAR", ultima_verificacao_at: hoursAgo(0.1) }, 12, now)).toBe(true);
+  });
+
+  it("nunca conferida entra; conferida há pouco espera; conferida há mais que o limite volta", () => {
+    expect(isDueForTracking({ status: "SOLICITADO", ultima_verificacao_at: null }, 12, now)).toBe(true);
+    expect(isDueForTracking({ status: "PROCESSANDO_SEFAZ", ultima_verificacao_at: hoursAgo(3) }, 12, now)).toBe(false);
+    expect(isDueForTracking({ status: "PROCESSANDO_SEFAZ", ultima_verificacao_at: hoursAgo(12) }, 12, now)).toBe(true);
   });
 });

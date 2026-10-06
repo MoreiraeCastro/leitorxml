@@ -16,7 +16,8 @@ export async function GET(request: Request) {
       .split(",")
       .filter((value) => z.string().uuid().safeParse(value).success);
     const only = z.string().uuid().safeParse(new URL(request.url).searchParams.get("establishmentId"));
-    const batch = await claimNextTrackingBatch(db, identity.userId, { excludeEstablishmentIds: exclude, ...(only.success ? { onlyEstablishmentId: only.data } : {}) });
+    const stale = z.coerce.number().min(0).max(24 * 14).safeParse(new URL(request.url).searchParams.get("staleHours") ?? undefined);
+    const batch = await claimNextTrackingBatch(db, identity.userId, { excludeEstablishmentIds: exclude, ...(only.success ? { onlyEstablishmentId: only.data } : {}), ...(stale.success ? { staleHours: stale.data } : {}) });
     if (!batch) return NextResponse.json({ establishment: null });
     return NextResponse.json({
       establishment: {

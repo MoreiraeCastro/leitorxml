@@ -203,6 +203,10 @@ const RUN_STALL_MS = 3 * 60 * 1000;
 const TRACK_STALL_MS = 8 * 60 * 1000; // visita a uma empresa pode incluir vários downloads de ZIP
 chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === AUTO_TRACK_ALARM) {
+    await maybeAutoTrack().catch((error) => setAutoStatus({ state: "ERRO", message: error.message }));
+    return;
+  }
   if (alarm.name !== "run-watchdog") return;
   const run = await getActiveRun();
   if (!run || run.mode === "SWEEP" || typeof run.startedAt !== "number") return;
@@ -244,6 +248,57 @@ async function setBelt(belt) {
 async function endBelt(summary) {
   const belt = (await getBelt()) ?? {};
   await setBelt({ ...belt, active: false, summary, finishedAt: Date.now() });
+  if (belt.auto) await setAutoStatus({ state: "CONCLUIDO", message: summary, problem: (belt.failed ?? 0) > 0 || /interromp/i.test(summary) });
+}
+
+// ---------- Acompanhamento automático ----------
+// Pensado pra quem opera sem saber de tecnologia: com o Chrome aberto e o Fisco Fácil logado, a cada ~20 min a
+// extensão pergunta ao backend se há algo a baixar/conferir e, havendo, roda sozinha a mesma esteira do botão
+// "Conferir resultados e baixar ZIPs". Só LÊ e baixa — nunca cria solicitação nova. Não consegue logar sozinha
+// (o acesso é por certificado): sem aba do Fisco Fácil aberta, avisa com um "!" no ícone em vez de tentar.
+const AUTO_TRACK_ALARM = "auto-track";
+const AUTO_TRACK_STALE_HOURS = 12; // uma solicitação "aguardando" só é reconferida depois disso (o SEFAZ leva dias)
+const AUTO_TRACK_FROM_HOUR = 7; // seg–sex, horário local do PC
+const AUTO_TRACK_TO_HOUR = 20;
+chrome.alarms.get(AUTO_TRACK_ALARM).then((alarm) => {
+  if (!alarm) chrome.alarms.create(AUTO_TRACK_ALARM, { delayInMinutes: 2, periodInMinutes: 20 });
+});
+
+async function setAutoStatus(status) {
+  await chrome.storage.local.set({ autoTrack: { ...status, at: Date.now() } });
+  const needsAttention = status.state === "PRECISA_ABRIR_FISCO" || status.state === "ERRO" || Boolean(status.problem);
+  await chrome.action.setBadgeText({ text: needsAttention ? "!" : "" }).catch(() => {});
+  if (needsAttention) await chrome.action.setBadgeBackgroundColor({ color: "#c0392b" }).catch(() => {});
+}
+
+async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
+  const { autoTrackEnabled = true } = await chrome.storage.local.get("autoTrackEnabled");
+  if (!autoTrackEnabled) return setAutoStatus({ state: "DESLIGADO" });
+  const now = new Date();
+  const weekend = now.getDay() === 0 || now.getDay() === 6;
+  if (!ignoreSchedule && (weekend || now.getHours() < AUTO_TRACK_FROM_HOUR || now.getHours() >= AUTO_TRACK_TO_HOUR)) return setAutoStatus({ state: "FORA_DO_HORARIO" });
+  if ((await getActiveRun()) || (await getBelt())?.active) return; // já tem esteira rodando: não interrompe
+  const { apiToken } = await getSettings();
+  if (!apiToken) return setAutoStatus({ state: "ERRO", message: "Token do backend não configurado na extensão." });
+  const summary = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento/resumo?staleHours=${AUTO_TRACK_STALE_HOURS}`)).json();
+  if (summary.paraBaixar + summary.aConferir === 0) return setAutoStatus({ state: "NADA_A_FAZER", summary });
+  const tabId = await findWorkTabId();
+  if (tabId == null) return setAutoStatus({ state: "PRECISA_ABRIR_FISCO", summary });
+  await setAutoStatus({ state: "RODANDO", summary });
+  const outcome = await startTrackingBelt({ tabId, auto: true });
+  if (!outcome.ok) await setAutoStatus({ state: "ERRO", message: outcome.error });
+}
+
+/** Começa a esteira de acompanhamento (botão do popup ou automático). */
+async function startTrackingBelt({ tabId, auto = false }) {
+  const existing = await getActiveRun();
+  if (existing) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing };
+  await chrome.storage.session.remove("lastSweepError");
+  await setBelt({ kind: "TRACK", active: true, auto, staleHours: auto ? AUTO_TRACK_STALE_HOURS : null, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+  if (!auto) await setAutoStatus({ state: "MANUAL" });
+  const first = await claimNextTrackingCompany([], 1, tabId);
+  if (!first) await endBelt("Nenhuma solicitação pendente de conferência.");
+  return { ok: true, run: first };
 }
 
 /** Uma aba do portal/Fisco Fácil, pra o vigia (que não tem `sender.tab`) poder navegar. */
@@ -325,7 +380,11 @@ async function navigateToHome(preferredTabId) {
 
 /** Reivindica a próxima empresa com solicitações a acompanhar e começa a corrida de acompanhamento nela. */
 async function claimNextTrackingCompany(visited, count, tabId) {
-  const query = visited.length ? `?exclude=${visited.join(",")}` : "";
+  const belt = await getBelt();
+  const params = new URLSearchParams();
+  if (visited.length) params.set("exclude", visited.join(","));
+  if (belt?.kind === "TRACK" && belt.staleHours != null) params.set("staleHours", String(belt.staleHours)); // automático: pula o que foi conferido há pouco
+  const query = params.toString() ? `?${params}` : "";
   const { establishment, accessContext, tasks } = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento${query}`)).json();
   if (!establishment) {
     await clearActiveRun();
@@ -814,13 +873,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "START_TRACKING": {
-          const existing = await getActiveRun();
-          if (existing) return sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
-          await chrome.storage.session.remove("lastSweepError");
-          await setBelt({ kind: "TRACK", active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
-          const first = await claimNextTrackingCompany([], 1, sender.tab?.id);
-          if (!first) await endBelt("Nenhuma solicitação pendente de conferência.");
-          sendResponse({ ok: true, run: first });
+          sendResponse(await startTrackingBelt({ tabId: sender.tab?.id }));
+          break;
+        }
+        case "AUTO_TRACK_NOW": {
+          // Botão "Verificar agora" do popup: roda a decisão do automático na hora (respeitando as mesmas regras).
+          await maybeAutoTrack({ ignoreSchedule: true }).catch((error) => setAutoStatus({ state: "ERRO", message: error.message }));
+          sendResponse({ ok: true, status: (await chrome.storage.local.get("autoTrack")).autoTrack ?? null });
           break;
         }
         case "TRACK_NEXT_COMPANY": {

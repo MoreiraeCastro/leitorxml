@@ -16,12 +16,22 @@
     #connectionStatus .label { color: #5c6670; }
     #connectionStatus .value { font-weight: 600; text-align: right; }
     #connectionStatus .empty { color: #9aa4ac; font-style: italic; }
+    #auto { margin-top: 10px; padding: 8px 10px; border-radius: 4px; background: #f4f6f5; font-size: 12px; line-height: 1.5; }
+    #auto label { display: flex; align-items: center; gap: 6px; margin: 0; color: #1a2129; font-weight: 600; }
+    #auto input { width: auto; }
+    #autoStatus { margin-top: 4px; color: #5c6670; }
+    #autoStatus.problem { color: #c0392b; font-weight: 600; }
   </style>
 </head>
 <body>
   <h1>Leitor de XML — Fisco Fácil</h1>
 
   <div id="connectionStatus"></div>
+
+  <div id="auto">
+    <label><input type="checkbox" id="autoEnabled" /> Acompanhamento automático</label>
+    <div id="autoStatus"></div>
+  </div>
 
   <label for="apiBaseUrl">URL do backend</label>
   <input id="apiBaseUrl" placeholder="http://localhost:3003/leitorxml" />
@@ -34,6 +44,7 @@
   <button id="startNext" class="secondary">Iniciar esteira de solicitações</button>
   <button id="stopBelt" class="secondary">Parar esteira</button>
   <button id="startTracking" class="secondary">Conferir resultados e baixar ZIPs</button>
+  <button id="autoNow" class="secondary">Verificar agora (automático)</button>
 
   <div id="status"></div>
 

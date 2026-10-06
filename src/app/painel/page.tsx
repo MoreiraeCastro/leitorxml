@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Shell } from "@/components/shell";
+import { TodaySummary, loadTodayCounts } from "@/components/today-summary";
 import { withBasePath } from "@/lib/base-path";
 import { previousClosedCompetencia } from "@/lib/leitorxml/tasks";
 import { STATUS_LABELS, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
@@ -47,11 +48,13 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
     .eq("competencia_mes", mes)
     .order("updated_at", { ascending: false });
 
+  const todayCounts = await loadTodayCounts(createAdminClient());
   const rows = (error ? [] : (tasks as TaskRow[] | null)) ?? [];
   const needsAttention = new Set<XmlCollectionStatus>(["AGUARDANDO_INTERVENCAO", "FALHA", "EXPIRADA"]);
 
   return (
     <Shell session={session}>
+      <TodaySummary counts={todayCounts} />
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[#082240]">Painel mensal — {competenciaLabel(ano, mes)}</h1>
         <form className="flex items-center gap-2 text-sm" action={withBasePath("/painel")}>

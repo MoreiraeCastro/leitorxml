@@ -34,7 +34,35 @@ function describeBelt(belt) {
   return belt.summary ? `\n${belt.summary}` : "";
 }
 
+function describeAuto(auto) {
+  if (!auto) return { text: "Ainda não verificou. Deixe o Chrome aberto com o Fisco Fácil logado.", problem: false };
+  const when = new Date(auto.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const s = auto.summary;
+  const counts = s ? `${s.paraBaixar} pronta(s) pra baixar, ${s.aConferir} a conferir, ${s.aguardandoSefaz} aguardando o SEFAZ` : "";
+  switch (auto.state) {
+    case "DESLIGADO": return { text: "Desligado.", problem: false };
+    case "FORA_DO_HORARIO": return { text: `${when}: fora do horário (seg–sex, 7h–20h).`, problem: false };
+    case "NADA_A_FAZER": return { text: `${when}: nada a fazer agora. ${counts}`, problem: false };
+    case "RODANDO": return { text: `${when}: rodando… ${counts}`, problem: false };
+    case "PRECISA_ABRIR_FISCO": return { text: `${when}: há trabalho (${counts}), mas não achei o Fisco Fácil aberto. Abra o Fisco Fácil, entre com o certificado e deixe a aba aberta.`, problem: true };
+    case "ERRO": return { text: `${when}: erro — ${auto.message ?? "?"}`, problem: true };
+    case "CONCLUIDO": return { text: `${when}: ${auto.message ?? "concluído"}`, problem: Boolean(auto.problem) };
+    case "MANUAL": return { text: "Conferência manual em andamento.", problem: false };
+    default: return { text: "", problem: false };
+  }
+}
+
+async function renderAuto() {
+  const { autoTrack, autoTrackEnabled = true } = await chrome.storage.local.get(["autoTrack", "autoTrackEnabled"]);
+  document.getElementById("autoEnabled").checked = autoTrackEnabled;
+  const { text, problem } = describeAuto(autoTrack);
+  const el = document.getElementById("autoStatus");
+  el.textContent = text;
+  el.className = problem ? "problem" : "";
+}
+
 async function load() {
+  await renderAuto();
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
   urlInput.value = apiBaseUrl ?? "http://localhost:3003/leitorxml";
   tokenInput.value = apiToken ?? "";
@@ -63,6 +91,18 @@ document.getElementById("startTracking").addEventListener("click", async () => {
   else if (!response.ok) statusEl.textContent = `Erro: ${response.error}`;
   else if (!response.run) statusEl.textContent = "Nenhuma solicitação pendente de conferência.";
   else statusEl.textContent = `${describeRun(response.run)}\nVai até conferir todas as empresas com pendências; use "Parar esteira" para interromper.`;
+});
+
+document.getElementById("autoEnabled").addEventListener("change", async (event) => {
+  await chrome.storage.local.set({ autoTrackEnabled: event.target.checked });
+  await renderAuto();
+});
+
+document.getElementById("autoNow").addEventListener("click", async () => {
+  statusEl.textContent = "Verificando se há algo a conferir ou baixar...";
+  const response = await chrome.runtime.sendMessage({ type: "AUTO_TRACK_NOW" });
+  await renderAuto();
+  statusEl.textContent = response.ok ? "Verificação feita — veja o resumo acima." : `Erro: ${response.error}`;
 });
 
 document.getElementById("stopBelt").addEventListener("click", async () => {

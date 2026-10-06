@@ -23,6 +23,20 @@ A extensão **não exige mais cadastro manual de estabelecimento** no Portal ant
 
 Tela "Nova extração" e cadastro manual em "Estabelecimentos" continuam existindo (úteis pra ver/ajustar o que foi descoberto, ou pra casos fora da varredura), mas deixaram de ser pré-requisito.
 
+## Acompanhamento automático
+
+Pra quem opera sem conhecimento técnico: com o Chrome aberto e o Fisco Fácil logado (certificado), a cada ~20 min
+(seg–sex, 7h–20h, horário do PC) a extensão consulta `GET /api/leitorxml/extensao/acompanhamento/resumo` e, se há
+solicitação pronta pra baixar ou que não é conferida há mais de 12 h, roda sozinha a esteira "Conferir resultados e
+baixar ZIPs". Só **lê e baixa** — nunca cria solicitação. Regras:
+
+- Não loga sozinha (acesso por certificado). Sem aba do Fisco Fácil/portal aberta, não tenta: põe um **"!"** vermelho no
+  ícone e explica no popup.
+- Solicitações "aguardando processamento" não são reconferidas antes de 12 h (o SEFAZ leva dias); as **prontas pra
+  baixar** nunca esperam.
+- Não interrompe esteira em andamento. Interruptor e botão "Verificar agora" no popup; estado em `chrome.storage.local.autoTrack`.
+- O Painel do portal mostra "O que fazer agora" com a próxima ação em linguagem simples.
+
 ## Arquitetura
 
 - `src/background.js` — service worker. Único lugar que fala com o backend (token, fetch). Mantém o estado da execução em `chrome.storage.session` (`activeRun`) e escuta `chrome.downloads` para capturar o ZIP quando uma solicitação está pronta. Orquestra tanto o modo descoberta de procuração (fila `discovery.queue`/`discovery.cursor`, usado na Fase 2 quando uma tarefa não tem posição conhecida) quanto a varredura completa (fila `sweepQueue`/`sweepCursor`, Fase 1) — ambos avançam via `history.back()` injetado com `chrome.scripting.executeScript`.
