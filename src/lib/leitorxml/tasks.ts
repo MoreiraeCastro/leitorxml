@@ -217,7 +217,11 @@ export async function summarizeTrackingNeeds(db: SupabaseClient, options: { stal
   const { data, error } = await db.from("xml_collection_tasks").select("id,establishment_id,status,ultima_verificacao_at").in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]).limit(2000);
   if (error) throw new Error("TRACKING_SUMMARY_FAILED");
   const due = (data ?? []).filter((row) => isDueForTracking(row, options.staleHours, now));
+  // Tarefas ainda não pedidas ao Fisco Fácil (a esteira de solicitações automática decide a partir disso).
+  const { count: agendadas, error: agendadasError } = await db.from("xml_collection_tasks").select("id", { count: "exact", head: true }).eq("status", "AGENDADA");
+  if (agendadasError) throw new Error("TRACKING_SUMMARY_FAILED");
   return {
+    agendadas: agendadas ?? 0,
     paraBaixar: due.filter((row) => row.status === "PRONTO_PARA_BAIXAR").length,
     aConferir: due.filter((row) => row.status !== "PRONTO_PARA_BAIXAR").length,
     empresas: new Set(due.map((row) => row.establishment_id)).size,

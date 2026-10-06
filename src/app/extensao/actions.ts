@@ -28,6 +28,27 @@ export async function gerarToken(_prevState: GerarTokenState, formData: FormData
   return { token: result.token, label: parsed.data ?? null, error: null };
 }
 
+const PAIRING_LABEL = "Pareamento automático";
+
+/** "Conectar esta extensão": revoga o token de pareamento anterior deste usuário e cria um novo, entregue à extensão pela própria página (nunca exibido). */
+export async function parearExtensao(): Promise<{ token: string }> {
+  const session = await requireOfficeSession();
+  const db = createAdminClient();
+  await db.from("xml_leitor_extension_tokens").update({ revoked_at: new Date().toISOString() }).eq("user_id", session.userId).eq("label", PAIRING_LABEL).is("revoked_at", null);
+  const result = await createExtensionToken(db, session.userId, PAIRING_LABEL);
+  await db.from("audit_logs").insert({
+    actor_user_id: session.userId,
+    organization_id: null,
+    actor_type: "OFFICE",
+    action: "leitorxml_extension_paired",
+    entity: "xml_leitor_extension_token",
+    entity_id: result.id,
+    safe_metadata: {},
+  });
+  revalidatePath("/extensao");
+  return { token: result.token };
+}
+
 export async function revogarToken(formData: FormData) {
   const session = await requireOfficeSession();
   const id = String(formData.get("id") ?? "");

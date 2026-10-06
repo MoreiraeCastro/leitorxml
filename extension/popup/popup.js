@@ -26,7 +26,7 @@ function describeProgress(belt) {
 
 /** Resume tudo numa frase de status: o que está acontecendo e se precisa de ação. */
 function deriveHeadline({ run, belt, auto, hasToken, lastSweepError }) {
-  if (!hasToken) return { tone: "warn", title: "Falta configurar o acesso", detail: "Abra “Configurações” abaixo e cole o token gerado no portal." };
+  if (!hasToken) return { tone: "warn", title: "Falta conectar ao portal", detail: "Clique em “Conectar ao portal” e, na página que abrir, em “Conectar esta extensão”. É só um clique." };
   if (run || belt?.active) {
     const title = belt?.kind === "TRACK" ? "Conferindo e baixando…" : run?.mode === "SWEEP" ? "Atualizando procurações…" : "Solicitando ao Fisco Fácil…";
     return { tone: "busy", busy: true, title, detail: [describeRun(run), describeProgress(belt)].filter(Boolean).join("\n") };
@@ -73,8 +73,8 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
   }
 
   const working = Boolean(run || belt?.active);
-  $("startNext").hidden = working;
-  $("startTracking").hidden = working;
+  $("workNow").hidden = working || !hasToken;
+  $("connectPortal").hidden = hasToken;
   $("stopBelt").hidden = !belt?.active;
   $("startNext").disabled = !hasToken;
   $("startTracking").disabled = !hasToken;
@@ -96,13 +96,14 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
 
 let inputsLoaded = false;
 async function load() {
-  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled"]);
-  const apiBaseUrl = local.apiBaseUrl ?? "http://localhost:3003/leitorxml";
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled"]);
+  const apiBaseUrl = local.apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml";
   // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
   if (!inputsLoaded) {
     urlInput.value = apiBaseUrl;
     tokenInput.value = local.apiToken ?? "";
-    if (!local.apiToken) $("settings").open = true;
+    $("robotMode").checked = Boolean(local.robotMode);
+    $("autoRequest").checked = Boolean(local.autoRequestEnabled);
     inputsLoaded = true;
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
@@ -114,6 +115,21 @@ $("save").addEventListener("click", async () => {
   await chrome.storage.local.set({ apiBaseUrl: urlInput.value.trim(), apiToken: tokenInput.value.trim() });
   say("Configurações salvas.");
   await load();
+});
+
+$("robotMode").addEventListener("change", async (event) => {
+  await chrome.storage.local.set({ robotMode: event.target.checked });
+  say(event.target.checked ? "Modo PC robô ligado: abre o Fisco Fácil e trabalha sozinho." : "Modo PC robô desligado.");
+});
+
+$("autoRequest").addEventListener("change", async (event) => {
+  // Cria solicitações REAIS sem ninguém clicando: só liga depois de confirmar.
+  if (event.target.checked && !confirm("A extensão passará a PEDIR documentos de verdade no Fisco Fácil sozinha, a partir do dia 10 de cada mês.\n\nLigar?")) {
+    event.target.checked = false;
+    return;
+  }
+  await chrome.storage.local.set({ autoRequestEnabled: event.target.checked });
+  say(event.target.checked ? "Solicitação automática ligada (a partir do dia 10)." : "Solicitação automática desligada.");
 });
 
 $("autoEnabled").addEventListener("change", async (event) => {
@@ -133,6 +149,30 @@ $("startSweep").addEventListener("click", async () => {
   say("Iniciando a atualização das procurações…");
   const response = await chrome.runtime.sendMessage({ type: "START_SWEEP" });
   say(response.ok ? "" : `Erro: ${response.error}`);
+  await load();
+});
+
+$("connectPortal").addEventListener("click", async () => {
+  const { apiBaseUrl } = await chrome.storage.local.get("apiBaseUrl");
+  await chrome.tabs.create({ url: `${(apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml").replace(/\/$/, "")}/extensao` });
+});
+
+$("workNow").addEventListener("click", async () => {
+  say("Vendo o que há para fazer…");
+  let response = await chrome.runtime.sendMessage({ type: "WORK_NOW" });
+  if (response.needsConfirm) {
+    // Nada a baixar, mas há tarefas ainda não pedidas: pedir cria solicitações REAIS, então confirma antes.
+    if (!confirm(`Há ${response.needsConfirm.agendadas} solicitações ainda não pedidas ao Fisco Fácil.\n\nPedir agora, empresa por empresa?`)) {
+      say("");
+      return;
+    }
+    response = await chrome.runtime.sendMessage({ type: "WORK_NOW", confirmRequest: true });
+  }
+  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") say("Já tem uma tarefa em andamento — espere terminar.");
+  else if (response.error === "PRECISA_ABRIR_FISCO") say("Abra o Fisco Fácil, entre com o certificado e clique de novo.");
+  else if (!response.ok) say(`Erro: ${response.error}`);
+  else if (response.nothing) say("Nada a fazer agora.");
+  else say("");
   await load();
 });
 

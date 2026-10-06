@@ -21,6 +21,11 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["https://portalmoreiraecastro.com.br/leitorxml/*", "http://localhost:3003/leitorxml/*"],
+      "js": ["src/content-portal.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": ["https://fisco-facil.fazenda.rj.gov.br/*"],
       "js": ["src/dom-utils.js", "src/content-fisco.js"],
       "run_at": "document_idle"

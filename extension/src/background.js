@@ -5,6 +5,9 @@
 // do navegador) sob a chave "activeRun".
 
 const HOME_URL = "https://ssacert.fazenda.rj.gov.br/ssa/certificadoWeb";
+const DEFAULT_API_BASE_URL = "https://portalmoreiraecastro.com.br/leitorxml";
+// Origens do portal que podem entregar um token à extensão (conexão com um clique).
+const PORTAL_ORIGINS = new Set(["https://portalmoreiraecastro.com.br", "http://localhost:3003"]);
 
 // chrome.storage.session só é acessível de contextos confiáveis (páginas da
 // extensão/service worker) por padrão — content scripts levam "Access to
@@ -169,7 +172,7 @@ async function ensurePageGlobals(tabId) {
 
 async function getSettings() {
   const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
-  return { apiBaseUrl: apiBaseUrl || "http://localhost:3003/leitorxml", apiToken: apiToken || null };
+  return { apiBaseUrl: apiBaseUrl || DEFAULT_API_BASE_URL, apiToken: apiToken || null };
 }
 
 async function apiFetch(path, options = {}) {
@@ -204,7 +207,7 @@ const TRACK_STALL_MS = 8 * 60 * 1000; // visita a uma empresa pode incluir vári
 const TRACK_IDLE_MS = 3 * 60 * 1000; // ...mas passar 3 min sem NENHUM passo novo é travamento (o teto de 8 min não cobria isso)
 chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === AUTO_TRACK_ALARM) {
+  if (alarm.name === AUTO_TRACK_ALARM || alarm.name === AUTO_TRACK_SOON_ALARM) {
     await maybeAutoTrack().catch((error) => setAutoStatus({ state: "ERRO", message: error.message }));
     return;
   }
@@ -251,7 +254,13 @@ async function setBelt(belt) {
 async function endBelt(summary) {
   const belt = (await getBelt()) ?? {};
   await setBelt({ ...belt, active: false, summary, finishedAt: Date.now() });
-  if (belt.auto) await setAutoStatus({ state: "CONCLUIDO", message: summary, problem: (belt.failed ?? 0) > 0 || /interromp/i.test(summary) });
+  if (belt.auto) {
+    const problem = (belt.failed ?? 0) > 0 || /interromp/i.test(summary);
+    await setAutoStatus({ state: "CONCLUIDO", message: summary, problem });
+    // Com problema: pausa antes de tentar de novo (não martelar o site). Sem problema: reavalia logo (ex.: depois de baixar, pode haver o que solicitar).
+    if (problem) await chrome.storage.local.set({ autoPauseUntil: Date.now() + AUTO_PAUSE_AFTER_PROBLEM_MS });
+    else chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 });
+  }
 }
 
 // ---------- Acompanhamento automático ----------
@@ -260,12 +269,17 @@ async function endBelt(summary) {
 // "Conferir resultados e baixar ZIPs". Só LÊ e baixa — nunca cria solicitação nova. Não consegue logar sozinha
 // (o acesso é por certificado): sem aba do Fisco Fácil aberta, avisa com um "!" no ícone em vez de tentar.
 const AUTO_TRACK_ALARM = "auto-track";
+const AUTO_TRACK_SOON_ALARM = "auto-track-soon";
+const AUTO_REQUEST_FROM_DAY = 10; // a esteira de solicitações automática só começa a partir do dia 10 (fechamento do mês anterior)
+const AUTO_PAUSE_AFTER_PROBLEM_MS = 2 * 60 * 60 * 1000; // esteira automática que terminou com problema não recomeça por 2 h
 const AUTO_TRACK_STALE_HOURS = 12; // uma solicitação "aguardando" só é reconferida depois disso (o SEFAZ leva dias)
 const AUTO_TRACK_FROM_HOUR = 7; // seg–sex, horário local do PC
 const AUTO_TRACK_TO_HOUR = 20;
 chrome.alarms.get(AUTO_TRACK_ALARM).then((alarm) => {
   if (!alarm) chrome.alarms.create(AUTO_TRACK_ALARM, { delayInMinutes: 2, periodInMinutes: 20 });
 });
+// Quando o Chrome abre (PC do escritório ligando), avalia logo em vez de esperar o próximo toque.
+chrome.runtime.onStartup.addListener(() => chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 }));
 
 async function setAutoStatus(status) {
   await chrome.storage.local.set({ autoTrack: { ...status, at: Date.now() } });
@@ -275,29 +289,87 @@ async function setAutoStatus(status) {
 }
 
 async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
-  const { autoTrackEnabled = true } = await chrome.storage.local.get("autoTrackEnabled");
+  const { autoTrackEnabled = true, robotMode = false, autoRequestEnabled = false, autoPauseUntil = 0 } = await chrome.storage.local.get(["autoTrackEnabled", "robotMode", "autoRequestEnabled", "autoPauseUntil"]);
   if (!autoTrackEnabled) return setAutoStatus({ state: "DESLIGADO" });
   const now = new Date();
   const weekend = now.getDay() === 0 || now.getDay() === 6;
-  if (!ignoreSchedule && (weekend || now.getHours() < AUTO_TRACK_FROM_HOUR || now.getHours() >= AUTO_TRACK_TO_HOUR)) return setAutoStatus({ state: "FORA_DO_HORARIO" });
+  // "Modo PC robô": máquina dedicada, sem ninguém na frente — trabalha a qualquer hora e qualquer dia.
+  if (!ignoreSchedule && !robotMode && (weekend || now.getHours() < AUTO_TRACK_FROM_HOUR || now.getHours() >= AUTO_TRACK_TO_HOUR)) return setAutoStatus({ state: "FORA_DO_HORARIO" });
+  if (!ignoreSchedule && autoPauseUntil > Date.now()) return; // terminou com problema há pouco: espera, sem martelar o site
   if ((await getActiveRun()) || (await getBelt())?.active) return; // já tem esteira rodando: não interrompe
   const { apiToken } = await getSettings();
   if (!apiToken) return setAutoStatus({ state: "ERRO", message: "Token do backend não configurado na extensão." });
   const summary = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento/resumo?staleHours=${AUTO_TRACK_STALE_HOURS}`)).json();
-  if (summary.paraBaixar + summary.aConferir === 0) return setAutoStatus({ state: "NADA_A_FAZER", summary });
-  const tabId = await findWorkTabId();
+  // Primeiro baixa/confere o que já foi pedido; só então pede mais (solicitar é opt-in e só a partir do dia 10).
+  const trackWork = summary.paraBaixar + summary.aConferir > 0;
+  const requestWork = autoRequestEnabled && now.getDate() >= AUTO_REQUEST_FROM_DAY && (summary.agendadas ?? 0) > 0;
+  if (!trackWork && !requestWork) return setAutoStatus({ state: "NADA_A_FAZER", summary });
+  let tabId = await findWorkTabId();
+  if (tabId == null && robotMode) tabId = await openWorkTab();
   if (tabId == null) return setAutoStatus({ state: "PRECISA_ABRIR_FISCO", summary });
   await setAutoStatus({ state: "RODANDO", summary });
-  const outcome = await startTrackingBelt({ tabId, auto: true });
+  const outcome = trackWork ? await startTrackingBelt({ tabId, auto: true }) : await startRequestBelt({ tabId, auto: true });
   if (!outcome.ok) await setAutoStatus({ state: "ERRO", message: outcome.error });
 }
 
+/**
+ * O botão único "Trabalhar agora": decide sozinho o que fazer. Primeiro baixa/confere o que já foi pedido; se não
+ * há isso e há tarefas ainda não pedidas, pede confirmação (cria pedidos REAIS) e só então começa a esteira de pedidos.
+ */
+async function workNow({ tabId, confirmRequest = false }) {
+  if ((await getActiveRun()) || (await getBelt())?.active) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO" };
+  const { apiToken } = await getSettings();
+  if (!apiToken) return { ok: false, error: "SEM_TOKEN_CONFIGURADO" };
+  const summary = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento/resumo?staleHours=${AUTO_TRACK_STALE_HOURS}`)).json();
+  const trackWork = summary.paraBaixar + summary.aConferir > 0;
+  const requestWork = (summary.agendadas ?? 0) > 0;
+  if (!trackWork && !requestWork) return { ok: true, nothing: true, summary };
+  if (!trackWork && !confirmRequest) return { ok: true, needsConfirm: { agendadas: summary.agendadas }, summary };
+  let workTabId = tabId ?? (await findWorkTabId());
+  const { robotMode = false } = await chrome.storage.local.get("robotMode");
+  if (workTabId == null && robotMode) workTabId = await openWorkTab();
+  if (workTabId == null) return { ok: false, error: "PRECISA_ABRIR_FISCO", summary };
+  const outcome = trackWork ? await startTrackingBelt({ tabId: workTabId, onlyDue: true }) : await startRequestBelt({ tabId: workTabId });
+  return { ...outcome, started: trackWork ? "TRACK" : "REQUEST", summary };
+}
+
+/** Guarda o token entregue pelo portal (conexão com um clique). Só aceita de uma página do portal conhecido. */
+async function pairFromPortal(message, sender) {
+  const senderOrigin = sender.tab?.url ? new URL(sender.tab.url).origin : null;
+  if (!senderOrigin || !PORTAL_ORIGINS.has(senderOrigin)) return { ok: false, error: "ORIGEM_NAO_PERMITIDA" };
+  if (typeof message.token !== "string" || !message.token.startsWith("lxml_") || typeof message.apiBaseUrl !== "string") return { ok: false, error: "DADOS_INVALIDOS" };
+  const apiOrigin = new URL(message.apiBaseUrl).origin;
+  if (apiOrigin !== senderOrigin) return { ok: false, error: "ENDERECO_DIFERENTE_DA_ORIGEM" };
+  await chrome.storage.local.set({ apiBaseUrl: message.apiBaseUrl.replace(/\/$/, ""), apiToken: message.token });
+  await setAutoStatus({ state: "MANUAL" }); // limpa avisos antigos (ex.: "token inválido")
+  chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 }); // já confere se há algo a baixar
+  return { ok: true };
+}
+
+/** Modo PC robô: sem nenhuma aba do Fisco Fácil aberta, abre uma (o Chrome escolhe o certificado sozinho por política do Windows). */
+async function openWorkTab() {
+  const tab = await chrome.tabs.create({ url: HOME_URL, active: true });
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  return tab.id ?? null;
+}
+
+/** Começa a esteira de solicitações (botão do popup ou automático). */
+async function startRequestBelt({ tabId, auto = false, force = false }) {
+  const existing = await getActiveRun();
+  if (existing && !force) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing };
+  await setBelt({ kind: "REQUEST", active: true, auto, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+  await chrome.storage.session.remove("lastSweepError");
+  const run = await claimNextTaskAndPrepare(1, null, tabId ?? null);
+  if (!run) await endBelt("Nada pendente na fila.");
+  return { ok: true, run };
+}
+
 /** Começa a esteira de acompanhamento (botão do popup ou automático). */
-async function startTrackingBelt({ tabId, auto = false }) {
+async function startTrackingBelt({ tabId, auto = false, onlyDue = false }) {
   const existing = await getActiveRun();
   if (existing) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing };
   await chrome.storage.session.remove("lastSweepError");
-  await setBelt({ kind: "TRACK", active: true, auto, staleHours: auto ? AUTO_TRACK_STALE_HOURS : null, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+  await setBelt({ kind: "TRACK", active: true, auto, staleHours: auto || onlyDue ? AUTO_TRACK_STALE_HOURS : null, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
   if (!auto) await setAutoStatus({ state: "MANUAL" });
   const first = await claimNextTrackingCompany([], 1, tabId);
   if (!first) await endBelt("Nenhuma solicitação pendente de conferência.");
@@ -705,16 +777,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // andamento — isso reivindicava outra tarefa sem liberar a trava da anterior,
           // deixando estabelecimentos travados abandonados pra trás (confirmado ao vivo,
           // 2026-09-30). Só permite se não houver activeRun, ou se `force: true` vier explícito.
-          const existing = await getActiveRun();
-          if (existing && !message.force) {
-            sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
-            break;
-          }
-          await setBelt({ kind: "REQUEST", active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
-          await chrome.storage.session.remove("lastSweepError");
-          const run = await claimNextTaskAndPrepare();
-          if (!run) await endBelt("Nada pendente na fila.");
-          sendResponse({ ok: true, run });
+          sendResponse(await startRequestBelt({ force: Boolean(message.force) }));
           break;
         }
         case "REPORT_STATUS": {
@@ -877,6 +940,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "START_TRACKING": {
           sendResponse(await startTrackingBelt({ tabId: sender.tab?.id }));
+          break;
+        }
+        case "WORK_NOW": {
+          sendResponse(await workNow({ tabId: sender.tab?.id, confirmRequest: Boolean(message.confirmRequest) }));
+          break;
+        }
+        case "PAIR_FROM_PORTAL": {
+          sendResponse(await pairFromPortal(message, sender));
+          break;
+        }
+        case "PAIRING_STATUS": {
+          sendResponse({ ok: true, paired: Boolean((await getSettings()).apiToken) });
           break;
         }
         case "AUTO_TRACK_NOW": {

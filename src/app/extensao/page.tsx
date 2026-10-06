@@ -1,6 +1,7 @@
 import { requireOfficeSessionOrRedirect, requireOfficeDataClient } from "@/lib/auth/session";
 import { Shell } from "@/components/shell";
 import { ExtensionTokenGenerator } from "@/components/extension-token-generator";
+import { ExtensionPairing } from "@/components/extension-pairing";
 import { revogarToken } from "./actions";
 
 export const metadata = { title: "Extensão" };
@@ -18,14 +19,22 @@ export default async function ExtensaoPage() {
 
   return (
     <Shell session={session}>
-      <h1 className="text-lg font-semibold text-[#082240]">Extensão — tokens de acesso</h1>
-      <p className="mt-1 text-sm text-black/60">
-        Cada token autentica a extensão Chrome como você. Gere um por máquina/colaborador e cole em &quot;Token&quot; no popup da extensão.
-      </p>
+      <h1 className="text-lg font-semibold text-[#082240]">Extensão</h1>
+      <p className="mt-1 text-sm text-black/60">Conecte a extensão do Chrome a este portal com um clique. Não precisa copiar token.</p>
 
       <div className="mt-4">
-        <ExtensionTokenGenerator />
+        <ExtensionPairing />
       </div>
+
+      <details className="mt-6 rounded border border-black/10 bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#082240]">Avançado: gerar um token manualmente</summary>
+        <div className="px-4 pb-4">
+          <p className="mb-3 text-sm text-black/60">Só para outros usos da API. Cada token autentica como você e aparece uma única vez.</p>
+          <ExtensionTokenGenerator />
+        </div>
+      </details>
+
+      <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-black/50">Conexões e tokens</h2>
 
       <div className="mt-6 overflow-x-auto rounded border border-black/10 bg-white">
         <table className="w-full border-collapse text-sm">
