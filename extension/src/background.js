@@ -201,6 +201,7 @@ async function clearActiveRun() {
 // do `runExpired` dos content scripts, não depende de uma página recarregar pra disparar.
 const RUN_STALL_MS = 3 * 60 * 1000;
 const TRACK_STALL_MS = 8 * 60 * 1000; // visita a uma empresa pode incluir vários downloads de ZIP
+const TRACK_IDLE_MS = 3 * 60 * 1000; // ...mas passar 3 min sem NENHUM passo novo é travamento (o teto de 8 min não cobria isso)
 chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === AUTO_TRACK_ALARM) {
@@ -211,9 +212,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const run = await getActiveRun();
   if (!run || run.mode === "SWEEP" || typeof run.startedAt !== "number") return;
   if (run.mode === "TRACK") {
-    if (Date.now() - run.startedAt < (run.verifyOnly ? RUN_STALL_MS : TRACK_STALL_MS)) return;
     const { lastNote } = await chrome.storage.session.get("lastNote");
-    await failActiveRun(run, `ACOMPANHAMENTO_TRAVADO em ${run.establishment?.razaoSocial}: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar; último passo: "${lastNote?.step ?? "nenhum"}" em ${lastNote?.path ?? "?"}`);
+    const idleFor = Date.now() - Math.max(run.startedAt, lastNote?.at ?? 0);
+    const totalFor = Date.now() - run.startedAt;
+    if (idleFor < TRACK_IDLE_MS && totalFor < (run.verifyOnly ? RUN_STALL_MS : TRACK_STALL_MS)) return;
+    await failActiveRun(run, `ACOMPANHAMENTO_TRAVADO em ${run.establishment?.razaoSocial}: ${Math.round(totalFor / 1000)}s no total, ${Math.round(idleFor / 1000)}s sem passo novo; último passo: "${lastNote?.step ?? "nenhum"}" em ${lastNote?.path ?? "?"}`);
     return;
   }
   if (!run.taskId) return;

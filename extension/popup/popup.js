@@ -42,7 +42,14 @@ function deriveHeadline({ run, belt, auto, hasToken, lastSweepError }) {
   return { tone: "", title: "Pronto", detail: "Deixe o Chrome aberto com o Fisco Fácil logado: a conferência acontece sozinha." };
 }
 
-function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, apiBaseUrl, autoEnabled }) {
+function describeLastNote(lastNote) {
+  if (!lastNote?.step) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - lastNote.at) / 1000));
+  const ago = seconds < 90 ? `há ${seconds}s` : `há ${Math.round(seconds / 60)} min`;
+  return `Último passo (${ago}): ${lastNote.step}`;
+}
+
+function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, apiBaseUrl, autoEnabled, lastNote }) {
   const headline = deriveHeadline({ run, belt, auto, hasToken, lastSweepError });
   $("statusCard").className = `status ${headline.tone}`;
   const title = $("statusTitle");
@@ -54,7 +61,8 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
     title.append(spinner);
   }
   title.append(headline.title);
-  $("statusDetail").textContent = headline.detail;
+  // Em andamento, mostra o último passo da extensão: se travar, é isso que a gente precisa ler.
+  $("statusDetail").textContent = [headline.detail, headline.busy ? describeLastNote(lastNote) : ""].filter(Boolean).join("\n");
 
   const summary = auto?.summary;
   $("chips").hidden = !summary;
@@ -98,8 +106,8 @@ async function load() {
     inputsLoaded = true;
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
-  const { lastSweepError, belt, connectionStatus } = await chrome.storage.session.get(["lastSweepError", "belt", "connectionStatus"]);
-  render({ run, belt, auto: local.autoTrack, hasToken: Boolean(local.apiToken), lastSweepError, connectionStatus, apiBaseUrl, autoEnabled: local.autoTrackEnabled ?? true });
+  const { lastSweepError, belt, connectionStatus, lastNote } = await chrome.storage.session.get(["lastSweepError", "belt", "connectionStatus", "lastNote"]);
+  render({ run, belt, auto: local.autoTrack, hasToken: Boolean(local.apiToken), lastSweepError, connectionStatus, apiBaseUrl, autoEnabled: local.autoTrackEnabled ?? true, lastNote });
 }
 
 $("save").addEventListener("click", async () => {
@@ -139,6 +147,8 @@ $("startTracking").addEventListener("click", async () => {
 });
 
 $("startNext").addEventListener("click", async () => {
+  // Cria solicitações REAIS no Fisco Fácil, empresa por empresa, até a fila acabar: nunca por engano.
+  if (!confirm("Isso vai PEDIR documentos de verdade no Fisco Fácil, empresa por empresa, até acabar a fila.\n\nContinuar?")) return;
   say("Buscando a próxima solicitação…");
   const response = await chrome.runtime.sendMessage({ type: "REQUEST_NEXT_TASK" });
   if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") say("Já tem uma tarefa em andamento — espere terminar.");

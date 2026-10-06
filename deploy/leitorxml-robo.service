@@ -1,0 +1,32 @@
+[Unit]
+Description=Leitor de XML - robô de acompanhamento do Fisco Fácil (certificado A1)
+After=network-online.target leitorxml.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/leitorxml
+Environment=HOME=/home/ubuntu
+Environment=ROBO_API_URL=http://localhost:3003/leitorxml
+Environment=ROBO_PFX=/home/ubuntu/leitorxml-robo/segredos/certificado.pfx
+
+# Senha do A1 e token da API: guardados CRIPTOGRAFADOS em /etc/leitorxml-robo (systemd-creds, amarrados a esta
+# máquina) e entregues ao robô só na memória, em $CREDENTIALS_DIRECTORY, enquanto o serviço roda.
+LoadCredentialEncrypted=a1pass:/etc/leitorxml-robo/a1pass.cred
+LoadCredentialEncrypted=robo-token:/etc/leitorxml-robo/robo-token.cred
+
+# O Fisco Fácil bloqueia Chrome sem tela: roda um Chrome normal numa tela virtual.
+ExecStart=/usr/bin/xvfb-run -a /home/ubuntu/.nvm/versions/node/v22.23.2/bin/node robo/src/cli.ts rastrear --stale-horas 20 --max-minutos 180
+TimeoutStartSec=4h
+
+# O servidor é pequeno (1,9 GB) e hospeda o portal: se faltar memória, quem morre é o robô, nunca o portal.
+MemoryHigh=900M
+MemoryMax=1200M
+OOMScoreAdjust=800
+CPUWeight=20
+Nice=10
+
+# Endurecimento leve (sem NoNewPrivileges: o Chrome precisa criar o próprio sandbox).
+PrivateTmp=true
+ProtectSystem=full

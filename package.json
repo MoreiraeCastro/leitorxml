@@ -10,12 +10,14 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "robo:rastrear": "node robo/src/cli.ts rastrear"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.3",
     "next": "16.3.2",
+    "playwright-core": "^1.63.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "4.4.3"
