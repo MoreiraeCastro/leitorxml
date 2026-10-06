@@ -56,6 +56,14 @@ export function extractZipEntry(buffer: Buffer, entry: ZipEntry): Buffer {
   if (dataEnd > buffer.length) throw new UnsafeZipError("Dados comprimidos além do fim do arquivo.");
   const compressed = buffer.subarray(dataStart, dataEnd);
   if (entry.compressionMethod === 0) return Buffer.from(compressed);
-  if (entry.compressionMethod === 8) return inflateRawSync(compressed);
+  if (entry.compressionMethod === 8) {
+    // `maxOutputLength` = tamanho declarado: um ZIP que MENTE no cabeçalho (declara pouco e infla muito)
+    // para furar a checagem de zip bomb estoura aqui em vez de alocar memória sem limite.
+    try {
+      return inflateRawSync(compressed, { maxOutputLength: Math.max(entry.uncompressedSize, 1) });
+    } catch {
+      throw new UnsafeZipError("Entrada excede o tamanho descompactado declarado ou está corrompida.");
+    }
+  }
   throw new UnsafeZipError(`Método de compactação ${entry.compressionMethod} não suportado.`);
 }

@@ -8,13 +8,13 @@ import { MAX_TOTAL_UNCOMPRESSED_BYTES, MAX_ZIP_ENTRIES, validateCollectedZip } f
  * cabeçalho (tamanho descompactado bem maior que o conteúdo real) para testar
  * a guarda de zip bomb sem precisar gerar dados reais gigantes.
  */
-function buildStoreZip(entries: Array<{ name: string; content: string; declaredUncompressedSize?: number }>): Buffer {
+function buildStoreZip(entries: Array<{ name: string; content: string | Buffer; declaredUncompressedSize?: number }>): Buffer {
   const localParts: Buffer[] = [];
   const centralParts: Buffer[] = [];
   let offset = 0;
   for (const entry of entries) {
     const nameBuffer = Buffer.from(entry.name, "utf8");
-    const contentBuffer = Buffer.from(entry.content, "utf8");
+    const contentBuffer = typeof entry.content === "string" ? Buffer.from(entry.content, "utf8") : entry.content;
     const uncompressedSize = entry.declaredUncompressedSize ?? contentBuffer.length;
     const localHeader = Buffer.alloc(30);
     localHeader.writeUInt32LE(0x04034b50, 0);
@@ -117,6 +117,62 @@ describe("validateCollectedZip", () => {
     const result = validateCollectedZip(zip);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("ZIP_EXCEDE_LIMITE_ENTRADAS");
+  });
+
+  describe("ZIP dentro de ZIP (formato real do Fisco Fácil)", () => {
+    const keyA = "33260831088032000114550010000190881632500008";
+    const keyB = "33260831088032000114550010000190891632500015";
+    const keyC = "33260831651540000169650010000413701725406160";
+
+    /** mês (AAAA_MM.zip) > dia (DD.zip) > XML, como o arquivo baixado de verdade. */
+    function realisticDownload() {
+      const day03 = buildStoreZip([{ name: `NFE${keyA}.xml`, content: `<nfeProc><NFe><infNFe Id="NFe${keyA}"/></NFe></nfeProc>` }]);
+      const day04 = buildStoreZip([
+        { name: `NFE${keyB}.xml`, content: `<nfeProc><NFe><infNFe Id="NFe${keyB}"/></NFe></nfeProc>` },
+        { name: `NFE${keyC}.xml`, content: `<nfeProc><NFe><infNFe Id="NFe${keyC}"/></NFe></nfeProc>` },
+      ]);
+      const month = buildStoreZip([
+        { name: "03.zip", content: day03 },
+        { name: "04.zip", content: day04 },
+      ]);
+      return buildStoreZip([{ name: "2026_08.zip", content: month }]);
+    }
+
+    it("entra nos ZIPs aninhados e acha as chaves de acesso dos XMLs de todos os níveis", () => {
+      const result = validateCollectedZip(realisticDownload());
+      expect(result.ok).toBe(true);
+      expect(result.entryCount).toBe(3); // só os XMLs; os ZIPs de mês e de dia não contam
+      expect([...result.accessKeysFound].sort()).toEqual([keyA, keyB, keyC].sort());
+    });
+
+    it("acha a chave de acesso também quando ela só aparece no nome do arquivo", () => {
+      const inner = buildStoreZip([{ name: `NFCE${keyC}.xml`, content: "<x/>" }]);
+      const result = validateCollectedZip(buildStoreZip([{ name: "2026_08.zip", content: inner }]));
+      expect(result.ok).toBe(true);
+      expect(result.accessKeysFound).toEqual([keyC]);
+    });
+
+    it("rejeita ZIPs aninhados fundo demais", () => {
+      let nested = buildStoreZip([{ name: `NFE${keyA}.xml`, content: "<x/>" }]);
+      for (let level = 0; level < 5; level++) nested = buildStoreZip([{ name: `nivel-${level}.zip`, content: nested }]);
+      const result = validateCollectedZip(nested);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("ZIP_ANINHADO_PROFUNDO_DEMAIS");
+    });
+
+    it("aplica a guarda de tamanho também dentro de um ZIP aninhado", () => {
+      const bomb = buildStoreZip([{ name: "bomba.xml", content: "x", declaredUncompressedSize: MAX_TOTAL_UNCOMPRESSED_BYTES + 1 }]);
+      const result = validateCollectedZip(buildStoreZip([{ name: "2026_08.zip", content: bomb }]));
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe("ZIP_EXCEDE_LIMITE_TAMANHO");
+    });
+
+    it("rejeita nome inseguro dentro de um ZIP aninhado", () => {
+      const inner = buildStoreZip([{ name: "../../fora.xml", content: "x" }]);
+      const result = validateCollectedZip(buildStoreZip([{ name: "2026_08.zip", content: inner }]));
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain("inseguro");
+    });
   });
 
   it("calcula o hash sha256 de forma estável para o mesmo conteúdo", () => {
