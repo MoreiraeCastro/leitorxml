@@ -309,7 +309,9 @@ function classifyTrackedSituacao(text) {
   if (/aguardando/.test(normalized)) return "PROCESSANDO_SEFAZ";
   if (/expirad/.test(normalized)) return "EXPIRADA";
   if (/sem resultado/.test(normalized)) return "SEM_DOCUMENTOS";
-  if (/com resultado/.test(normalized)) return "PRONTO_PARA_BAIXAR";
+  // Visto ao vivo (2026-10-06): a situação de uma solicitação pronta aparece como só "Processada"
+  // (e a sem documentos como "... sem resultado", tratada acima).
+  if (/com resultado|process[ao]/.test(normalized)) return "PRONTO_PARA_BAIXAR";
   return "DESCONHECIDA";
 }
 

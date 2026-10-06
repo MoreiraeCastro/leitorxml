@@ -189,7 +189,7 @@ const TRACKING_COLUMNS =
   "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,sefaz_referencia,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
 
 /**
- * Próxima empresa a ACOMPANHAR: a que tem tarefas já solicitadas (SOLICITADO / PROCESSANDO_SEFAZ) há mais
+ * Próxima empresa a ACOMPANHAR: a que tem tarefas já solicitadas (SOLICITADO / PROCESSANDO_SEFAZ / PRONTO_PARA_BAIXAR) há mais
  * tempo sem atualização. Devolve a empresa, como acessá-la e TODAS as tarefas pendentes dela — a extensão
  * entra na empresa uma vez, abre a aba Solicitações e confere/baixa cada uma. Trava a empresa (mesmo
  * mecanismo da fila de solicitações); `excludeEstablishmentIds` evita voltar numa empresa já visitada no
@@ -198,7 +198,7 @@ const TRACKING_COLUMNS =
 export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; onlyEstablishmentId?: string; now?: Date } = {}) {
   const now = options.now ?? new Date();
   const excluded = new Set(options.excludeEstablishmentIds ?? []);
-  let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ"]);
+  let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]);
   // `onlyEstablishmentId`: a esteira conferindo a aba Solicitações da empresa que ACABOU de solicitar (a trava é do mesmo usuário).
   if (options.onlyEstablishmentId) query = query.eq("establishment_id", options.onlyEstablishmentId);
   const { data, error } = await query.order("updated_at", { ascending: true }).limit(300);
