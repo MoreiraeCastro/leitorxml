@@ -4,49 +4,159 @@
   <meta charset="UTF-8" />
   <title>Leitor de XML</title>
   <style>
-    body { font-family: system-ui, sans-serif; width: 320px; padding: 16px; color: #1a2129; }
-    h1 { font-size: 15px; margin: 0 0 12px; }
-    label { display: block; font-size: 12px; color: #5c6670; margin: 10px 0 4px; }
-    input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-    button { width: 100%; margin-top: 12px; padding: 8px; border: none; border-radius: 4px; background: #082240; color: #fff; font-size: 13px; cursor: pointer; }
-    button.secondary { background: #eef1ef; color: #1a2129; }
-    #status { margin-top: 12px; font-size: 12px; color: #5c6670; white-space: pre-wrap; }
-    #connectionStatus { margin-top: 4px; padding: 8px 10px; border-radius: 4px; background: #f4f6f5; font-size: 12px; line-height: 1.5; }
-    #connectionStatus .row { display: flex; justify-content: space-between; gap: 8px; }
-    #connectionStatus .label { color: #5c6670; }
-    #connectionStatus .value { font-weight: 600; text-align: right; }
-    #connectionStatus .empty { color: #9aa4ac; font-style: italic; }
-    #auto { margin-top: 10px; padding: 8px 10px; border-radius: 4px; background: #f4f6f5; font-size: 12px; line-height: 1.5; }
-    #auto label { display: flex; align-items: center; gap: 6px; margin: 0; color: #1a2129; font-weight: 600; }
-    #auto input { width: auto; }
-    #autoStatus { margin-top: 4px; color: #5c6670; }
-    #autoStatus.problem { color: #c0392b; font-weight: 600; }
+    :root {
+      --navy: #082240; --navy-2: #123a5d; --ink: #1a2129; --muted: #5c6670; --line: #e3e8e5; --bg: #f4f6f4; --card: #fff;
+      --ok: #1b7f4b; --ok-bg: #e8f5ee; --warn: #9a6200; --warn-bg: #fdf3dc; --bad: #b3261e; --bad-bg: #fbe9e7; --busy: #1f5fa8; --busy-bg: #e6f0fb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 360px; background: var(--bg); color: var(--ink); font: 13px/1.45 system-ui, "Segoe UI", sans-serif; }
+    header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--navy); color: #fff; }
+    .logo { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.14); display: grid; place-items: center; flex: none; }
+    header h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .1px; }
+    header p { margin: 0; font-size: 11px; opacity: .72; }
+    main { padding: 14px 16px 12px; display: grid; gap: 12px; }
+
+    .status { border-radius: 10px; padding: 12px 14px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--muted); }
+    .status.ok { border-left-color: var(--ok); background: var(--ok-bg); }
+    .status.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+    .status.bad { border-left-color: var(--bad); background: var(--bad-bg); }
+    .status.busy { border-left-color: var(--busy); background: var(--busy-bg); }
+    .status h2 { margin: 0; font-size: 15px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+    .status.ok h2 { color: var(--ok); } .status.warn h2 { color: var(--warn); } .status.bad h2 { color: var(--bad); } .status.busy h2 { color: var(--busy); }
+    .status p { margin: 4px 0 0; color: var(--ink); overflow-wrap: anywhere; white-space: pre-line; }
+    .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+    .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .chips[hidden] { display: none; }
+    .chip { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center; }
+    .chip b { display: block; font-size: 20px; line-height: 1.1; color: var(--navy); }
+    .chip span { font-size: 11px; color: var(--muted); }
+
+    .actions { display: grid; gap: 8px; }
+    button { font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid transparent; }
+    button[hidden] { display: none; }
+    button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .action { text-align: left; padding: 11px 14px; background: var(--navy); color: #fff; }
+    .action:hover:not(:disabled) { background: var(--navy-2); }
+    .action strong { display: block; font-size: 14px; font-weight: 650; }
+    .action small { display: block; font-size: 11.5px; opacity: .78; margin-top: 1px; }
+    .action.light { background: var(--card); color: var(--navy); border-color: var(--line); }
+    .action.light:hover:not(:disabled) { background: #eef2ef; }
+    .action.stop { background: var(--card); color: var(--bad); border-color: #e7b8b3; text-align: center; padding: 10px; }
+    .action.stop:hover:not(:disabled) { background: var(--bad-bg); }
+    .small-btn { padding: 8px 12px; background: var(--card); color: var(--navy); border-color: var(--line); width: 100%; text-align: left; }
+    .small-btn:hover:not(:disabled) { background: #eef2ef; }
+    .small-btn small { display: block; color: var(--muted); font-size: 11px; }
+
+    .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+    .toggle strong { display: block; font-size: 13px; }
+    .toggle .hint { font-size: 11.5px; color: var(--muted); }
+    .switch { position: relative; width: 38px; height: 22px; flex: none; }
+    .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+    .switch i { position: absolute; inset: 0; border-radius: 22px; background: #c5cdc8; transition: background .15s; pointer-events: none; }
+    .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+    .switch input:checked + i { background: var(--ok); }
+    .switch input:checked + i::after { transform: translateX(16px); }
+    .switch input:focus-visible + i { outline: 2px solid var(--busy); outline-offset: 2px; }
+
+    details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+    summary { cursor: pointer; padding: 10px 14px; font-weight: 600; color: var(--navy); list-style: none; display: flex; justify-content: space-between; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "▾"; color: var(--muted); }
+    details[open] summary::after { content: "▴"; }
+    .panel { padding: 0 14px 14px; display: grid; gap: 8px; }
+    label.field { font-size: 11.5px; color: var(--muted); display: block; margin-bottom: 3px; }
+    .panel input { width: 100%; padding: 7px 9px; border: 1px solid #cfd6d2; border-radius: 8px; font: inherit; background: #fff; }
+    .save { background: var(--navy); color: #fff; padding: 8px; text-align: center; }
+    .save:hover { background: var(--navy-2); }
+
+    .conn { font-size: 11.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; padding: 0 2px; }
+    .conn b { color: var(--ink); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+    #message { min-height: 16px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+    #message:empty { display: none; }
+    footer { padding: 0 16px 14px; display: flex; justify-content: space-between; font-size: 11.5px; }
+    footer a { color: var(--busy); text-decoration: none; } footer a:hover { text-decoration: underline; }
+    footer span { color: var(--muted); }
   </style>
 </head>
 <body>
-  <h1>Leitor de XML — Fisco Fácil</h1>
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 14l2 2 4-4"/></svg>
+    </div>
+    <div>
+      <h1>Leitor de XML</h1>
+      <p>Fisco Fácil · Moreira &amp; Castro</p>
+    </div>
+  </header>
 
-  <div id="connectionStatus"></div>
+  <main>
+    <section class="status" id="statusCard" aria-live="polite">
+      <h2 id="statusTitle">Carregando…</h2>
+      <p id="statusDetail"></p>
+    </section>
 
-  <div id="auto">
-    <label><input type="checkbox" id="autoEnabled" /> Acompanhamento automático</label>
-    <div id="autoStatus"></div>
-  </div>
+    <section class="chips" id="chips" hidden>
+      <div class="chip"><b id="chipReady">0</b><span>prontas p/ baixar</span></div>
+      <div class="chip"><b id="chipCheck">0</b><span>a conferir</span></div>
+      <div class="chip"><b id="chipWait">0</b><span>no SEFAZ</span></div>
+    </section>
 
-  <label for="apiBaseUrl">URL do backend</label>
-  <input id="apiBaseUrl" placeholder="http://localhost:3003/leitorxml" />
+    <section class="actions" id="actions">
+      <button id="startNext" class="action">
+        <strong>Solicitar ao Fisco Fácil</strong>
+        <small>Pede os documentos das empresas, uma por uma</small>
+      </button>
+      <button id="startTracking" class="action light">
+        <strong>Conferir e baixar</strong>
+        <small>Baixa o que o SEFAZ já liberou</small>
+      </button>
+      <button id="stopBelt" class="action stop" hidden>Parar depois da etapa atual</button>
+    </section>
 
-  <label for="apiToken">Token (gerado em /leitorxml/estabelecimentos... via API)</label>
-  <input id="apiToken" type="password" placeholder="lxml_..." />
+    <div id="message" role="status"></div>
 
-  <button id="save">Salvar</button>
-  <button id="startSweep" class="secondary">Varrer todas as procurações</button>
-  <button id="startNext" class="secondary">Iniciar esteira de solicitações</button>
-  <button id="stopBelt" class="secondary">Parar esteira</button>
-  <button id="startTracking" class="secondary">Conferir resultados e baixar ZIPs</button>
-  <button id="autoNow" class="secondary">Verificar agora (automático)</button>
+    <label class="toggle">
+      <span>
+        <strong>Acompanhamento automático</strong>
+        <span class="hint">Confere e baixa sozinho, de seg a sex, 7h–20h</span>
+      </span>
+      <span class="switch"><input type="checkbox" id="autoEnabled" /><i></i></span>
+    </label>
 
-  <div id="status"></div>
+    <div class="conn" id="connection"></div>
+
+    <details>
+      <summary>Mais opções</summary>
+      <div class="panel">
+        <button id="autoNow" class="small-btn">Verificar agora<small>Procura o que há para baixar neste momento</small></button>
+        <button id="startSweep" class="small-btn">Atualizar lista de procurações<small>Só quando o cadastro de empresas mudar</small></button>
+      </div>
+    </details>
+
+    <details id="settings">
+      <summary>Configurações</summary>
+      <div class="panel">
+        <div>
+          <label class="field" for="apiBaseUrl">Endereço do portal</label>
+          <input id="apiBaseUrl" type="text" placeholder="https://…/leitorxml" />
+        </div>
+        <div>
+          <label class="field" for="apiToken">Token de acesso (gerado no portal, em “Extensão”)</label>
+          <input id="apiToken" type="password" placeholder="lxml_…" />
+        </div>
+        <button id="save" class="save">Salvar</button>
+      </div>
+    </details>
+  </main>
+
+  <footer>
+    <a id="portalLink" href="#" target="_blank" rel="noreferrer">Abrir o portal</a>
+    <span id="updated"></span>
+  </footer>
 
   <script src="popup.js"></script>
 </body>

@@ -1,127 +1,159 @@
-const urlInput = document.getElementById("apiBaseUrl");
-const tokenInput = document.getElementById("apiToken");
-const statusEl = document.getElementById("status");
-const connectionStatusEl = document.getElementById("connectionStatus");
+const $ = (id) => document.getElementById(id);
+const urlInput = $("apiBaseUrl");
+const tokenInput = $("apiToken");
 
-function renderConnectionStatus(connectionStatus) {
-  if (!connectionStatus || (!connectionStatus.certificado && !connectionStatus.empresa)) {
-    connectionStatusEl.innerHTML = `<div class="empty">Nenhuma aba do Fisco Fácil/SEFAZ detectada ainda.</div>`;
-    return;
-  }
-  const { certificado, empresa, cnpj } = connectionStatus;
-  connectionStatusEl.innerHTML = `
-    <div class="row"><span class="label">Certificado conectado</span><span class="value">${certificado ?? "—"}</span></div>
-    <div class="row"><span class="label">Empresa selecionada</span><span class="value">${empresa ? `${empresa}${cnpj ? ` (${cnpj})` : ""}` : "—"}</span></div>
-  `;
-}
+const say = (text) => { $("message").textContent = text ?? ""; };
 
 function describeRun(run) {
   if (!run) return null;
-  if (run.mode === "TRACK" && run.verifyOnly) return `Conferindo a aba Solicitações: ${run.establishment?.razaoSocial ?? "?"}`;
-  if (run.mode === "TRACK") return `Conferindo resultados: ${run.establishment?.razaoSocial ?? "?"} (empresa ${run.trackCount ?? 1})`;
+  if (run.mode === "TRACK" && run.verifyOnly) return `Empresa: ${run.establishment?.razaoSocial ?? "?"} (conferindo as solicitações)`;
+  if (run.mode === "TRACK") return `Empresa: ${run.establishment?.razaoSocial ?? "?"}`;
   if (run.mode === "SWEEP") {
     const total = run.sweepQueue?.length;
-    const posicao = (run.sweepCursor ?? 0) + 1;
-    return total ? `Varredura em andamento: procuração ${posicao}/${total}` : "Varredura em andamento: abrindo modal de procurações...";
+    return total ? `Atualizando procurações: ${(run.sweepCursor ?? 0) + 1} de ${total}` : "Atualizando procurações: abrindo a lista…";
   }
-  return `Em andamento: ${run.establishment?.razaoSocial ?? "?"} — ${run.tipoDocumento}/${run.papel}`;
+  const doc = run.tipoDocumento === "NFCE" ? "NFC-e" : "NF-e";
+  const papel = run.papel === "EMITENTE" ? "Emitente" : "Destinatário";
+  return `${doc} ${papel} · ${run.establishment?.razaoSocial ?? "?"}`;
 }
 
-function describeBelt(belt) {
-  if (!belt) return "";
-  const progresso = belt.kind === "TRACK" ? `${belt.processed} empresa(s) conferida(s), ${belt.failed} falha(s)` : `${belt.processed} solicitada(s), ${belt.failed} falha(s)`;
-  if (belt.active) return `\n${belt.kind === "TRACK" ? "Conferência ativa" : "Esteira ativa"}: ${progresso}${belt.stopRequested ? " — parando após a etapa atual" : ""}`;
-  return belt.summary ? `\n${belt.summary}` : "";
+function describeProgress(belt) {
+  if (!belt?.active) return "";
+  const falhas = belt.failed ? `, ${belt.failed} com problema` : "";
+  const feito = belt.kind === "TRACK" ? `${belt.processed} empresa(s) conferida(s)` : `${belt.processed} solicitada(s)`;
+  return `${feito}${falhas}${belt.stopRequested ? " — parando após a etapa atual" : ""}`;
 }
 
-function describeAuto(auto) {
-  if (!auto) return { text: "Ainda não verificou. Deixe o Chrome aberto com o Fisco Fácil logado.", problem: false };
-  const when = new Date(auto.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const s = auto.summary;
-  const counts = s ? `${s.paraBaixar} pronta(s) pra baixar, ${s.aConferir} a conferir, ${s.aguardandoSefaz} aguardando o SEFAZ` : "";
-  switch (auto.state) {
-    case "DESLIGADO": return { text: "Desligado.", problem: false };
-    case "FORA_DO_HORARIO": return { text: `${when}: fora do horário (seg–sex, 7h–20h).`, problem: false };
-    case "NADA_A_FAZER": return { text: `${when}: nada a fazer agora. ${counts}`, problem: false };
-    case "RODANDO": return { text: `${when}: rodando… ${counts}`, problem: false };
-    case "PRECISA_ABRIR_FISCO": return { text: `${when}: há trabalho (${counts}), mas não achei o Fisco Fácil aberto. Abra o Fisco Fácil, entre com o certificado e deixe a aba aberta.`, problem: true };
-    case "ERRO": return { text: `${when}: erro — ${auto.message ?? "?"}`, problem: true };
-    case "CONCLUIDO": return { text: `${when}: ${auto.message ?? "concluído"}`, problem: Boolean(auto.problem) };
-    case "MANUAL": return { text: "Conferência manual em andamento.", problem: false };
-    default: return { text: "", problem: false };
+/** Resume tudo numa frase de status: o que está acontecendo e se precisa de ação. */
+function deriveHeadline({ run, belt, auto, hasToken, lastSweepError }) {
+  if (!hasToken) return { tone: "warn", title: "Falta configurar o acesso", detail: "Abra “Configurações” abaixo e cole o token gerado no portal." };
+  if (run || belt?.active) {
+    const title = belt?.kind === "TRACK" ? "Conferindo e baixando…" : run?.mode === "SWEEP" ? "Atualizando procurações…" : "Solicitando ao Fisco Fácil…";
+    return { tone: "busy", busy: true, title, detail: [describeRun(run), describeProgress(belt)].filter(Boolean).join("\n") };
   }
+  if (auto?.state === "PRECISA_ABRIR_FISCO") return { tone: "warn", title: "Abra o Fisco Fácil", detail: "Há arquivos para baixar, mas não encontrei o Fisco Fácil aberto. Entre com o certificado e deixe a aba aberta." };
+  if (auto?.state === "ERRO") return { tone: "bad", title: "Algo deu errado", detail: auto.message ?? "Erro ao consultar o portal." };
+  if (auto?.state === "CONCLUIDO") return { tone: auto.problem ? "bad" : "ok", title: auto.problem ? "Terminou com problemas" : "Tudo certo", detail: auto.message ?? "" };
+  if (lastSweepError) return { tone: "bad", title: "Algo deu errado", detail: lastSweepError };
+  if (belt?.summary && !belt.active) return { tone: belt.failed ? "warn" : "ok", title: belt.failed ? "Terminou com problemas" : "Tudo certo", detail: belt.summary };
+  if (auto?.state === "NADA_A_FAZER") return { tone: "ok", title: "Tudo em dia", detail: "Nada para baixar ou conferir agora." };
+  if (auto?.state === "FORA_DO_HORARIO") return { tone: "", title: "Pronto", detail: "Fora do horário automático (seg–sex, 7h–20h). Você ainda pode usar os botões." };
+  if (auto?.state === "DESLIGADO") return { tone: "", title: "Automático desligado", detail: "Use os botões abaixo quando quiser conferir." };
+  return { tone: "", title: "Pronto", detail: "Deixe o Chrome aberto com o Fisco Fácil logado: a conferência acontece sozinha." };
 }
 
-async function renderAuto() {
-  const { autoTrack, autoTrackEnabled = true } = await chrome.storage.local.get(["autoTrack", "autoTrackEnabled"]);
-  document.getElementById("autoEnabled").checked = autoTrackEnabled;
-  const { text, problem } = describeAuto(autoTrack);
-  const el = document.getElementById("autoStatus");
-  el.textContent = text;
-  el.className = problem ? "problem" : "";
+function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, apiBaseUrl, autoEnabled }) {
+  const headline = deriveHeadline({ run, belt, auto, hasToken, lastSweepError });
+  $("statusCard").className = `status ${headline.tone}`;
+  const title = $("statusTitle");
+  title.replaceChildren();
+  if (headline.busy) {
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    title.append(spinner);
+  }
+  title.append(headline.title);
+  $("statusDetail").textContent = headline.detail;
+
+  const summary = auto?.summary;
+  $("chips").hidden = !summary;
+  if (summary) {
+    $("chipReady").textContent = summary.paraBaixar;
+    $("chipCheck").textContent = summary.aConferir;
+    $("chipWait").textContent = summary.aguardandoSefaz;
+  }
+
+  const working = Boolean(run || belt?.active);
+  $("startNext").hidden = working;
+  $("startTracking").hidden = working;
+  $("stopBelt").hidden = !belt?.active;
+  $("startNext").disabled = !hasToken;
+  $("startTracking").disabled = !hasToken;
+  $("autoEnabled").checked = autoEnabled;
+
+  const connection = $("connection");
+  connection.replaceChildren();
+  const label = document.createElement("span");
+  label.textContent = "Fisco Fácil";
+  const value = document.createElement("b");
+  value.textContent = connectionStatus && (connectionStatus.certificado || connectionStatus.empresa)
+    ? `${connectionStatus.certificado ?? "conectado"}${connectionStatus.empresa ? ` · ${connectionStatus.empresa}` : ""}`
+    : "aba não detectada";
+  connection.append(label, value);
+
+  $("portalLink").href = `${apiBaseUrl.replace(/\/$/, "")}/painel`;
+  $("updated").textContent = auto?.at ? `Verificado às ${new Date(auto.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "";
 }
 
+let inputsLoaded = false;
 async function load() {
-  await renderAuto();
-  const { apiBaseUrl, apiToken } = await chrome.storage.local.get(["apiBaseUrl", "apiToken"]);
-  urlInput.value = apiBaseUrl ?? "http://localhost:3003/leitorxml";
-  tokenInput.value = apiToken ?? "";
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled"]);
+  const apiBaseUrl = local.apiBaseUrl ?? "http://localhost:3003/leitorxml";
+  // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
+  if (!inputsLoaded) {
+    urlInput.value = apiBaseUrl;
+    tokenInput.value = local.apiToken ?? "";
+    if (!local.apiToken) $("settings").open = true;
+    inputsLoaded = true;
+  }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
-  const { lastSweepError, belt } = await chrome.storage.session.get(["lastSweepError", "belt"]);
-  statusEl.textContent = (describeRun(run) ?? (lastSweepError ? `Último erro: ${lastSweepError}` : "Nenhuma tarefa em andamento.")) + describeBelt(belt);
-  const { connectionStatus } = await chrome.storage.session.get("connectionStatus");
-  renderConnectionStatus(connectionStatus);
+  const { lastSweepError, belt, connectionStatus } = await chrome.storage.session.get(["lastSweepError", "belt", "connectionStatus"]);
+  render({ run, belt, auto: local.autoTrack, hasToken: Boolean(local.apiToken), lastSweepError, connectionStatus, apiBaseUrl, autoEnabled: local.autoTrackEnabled ?? true });
 }
 
-document.getElementById("save").addEventListener("click", async () => {
+$("save").addEventListener("click", async () => {
   await chrome.storage.local.set({ apiBaseUrl: urlInput.value.trim(), apiToken: tokenInput.value.trim() });
-  statusEl.textContent = "Salvo.";
+  say("Configurações salvas.");
+  await load();
 });
 
-document.getElementById("startSweep").addEventListener("click", async () => {
-  statusEl.textContent = "Iniciando varredura...";
-  const response = await chrome.runtime.sendMessage({ type: "START_SWEEP" });
-  statusEl.textContent = response.ok ? describeRun(response.run) : `Erro: ${response.error}`;
-});
-
-document.getElementById("startTracking").addEventListener("click", async () => {
-  statusEl.textContent = "Procurando solicitações a conferir...";
-  const response = await chrome.runtime.sendMessage({ type: "START_TRACKING" });
-  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") statusEl.textContent = `Já tem uma corrida em andamento — espera terminar.\n${describeRun(response.run)}`;
-  else if (!response.ok) statusEl.textContent = `Erro: ${response.error}`;
-  else if (!response.run) statusEl.textContent = "Nenhuma solicitação pendente de conferência.";
-  else statusEl.textContent = `${describeRun(response.run)}\nVai até conferir todas as empresas com pendências; use "Parar esteira" para interromper.`;
-});
-
-document.getElementById("autoEnabled").addEventListener("change", async (event) => {
+$("autoEnabled").addEventListener("change", async (event) => {
   await chrome.storage.local.set({ autoTrackEnabled: event.target.checked });
-  await renderAuto();
+  say(event.target.checked ? "Acompanhamento automático ligado." : "Acompanhamento automático desligado.");
+  await load();
 });
 
-document.getElementById("autoNow").addEventListener("click", async () => {
-  statusEl.textContent = "Verificando se há algo a conferir ou baixar...";
+$("autoNow").addEventListener("click", async () => {
+  say("Verificando se há algo para baixar…");
   const response = await chrome.runtime.sendMessage({ type: "AUTO_TRACK_NOW" });
-  await renderAuto();
-  statusEl.textContent = response.ok ? "Verificação feita — veja o resumo acima." : `Erro: ${response.error}`;
+  say(response.ok ? "" : `Erro: ${response.error}`);
+  await load();
 });
 
-document.getElementById("stopBelt").addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({ type: "STOP_BELT" });
-  statusEl.textContent = response.wasActive ? "Parando a esteira depois da tarefa atual..." : "A esteira não está ativa.";
+$("startSweep").addEventListener("click", async () => {
+  say("Iniciando a atualização das procurações…");
+  const response = await chrome.runtime.sendMessage({ type: "START_SWEEP" });
+  say(response.ok ? "" : `Erro: ${response.error}`);
+  await load();
 });
 
-document.getElementById("startNext").addEventListener("click", async () => {
-  statusEl.textContent = "Buscando...";
+$("startTracking").addEventListener("click", async () => {
+  say("Procurando o que conferir…");
+  const response = await chrome.runtime.sendMessage({ type: "START_TRACKING" });
+  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") say("Já tem uma tarefa em andamento — espere terminar.");
+  else if (!response.ok) say(`Erro: ${response.error}`);
+  else if (!response.run) say("Nada para conferir agora.");
+  else say("");
+  await load();
+});
+
+$("startNext").addEventListener("click", async () => {
+  say("Buscando a próxima solicitação…");
   const response = await chrome.runtime.sendMessage({ type: "REQUEST_NEXT_TASK" });
-  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") {
-    statusEl.textContent = `Já tem uma tarefa em andamento — espera terminar antes de buscar outra.\n${describeRun(response.run)}`;
-  } else if (!response.ok) {
-    statusEl.textContent = `Erro: ${response.error}`;
-  } else if (!response.run) {
-    statusEl.textContent = "Nada pendente no momento.";
-  } else {
-    statusEl.textContent = `Esteira iniciada: ${response.run.establishment.razaoSocial} — ${response.run.tipoDocumento}/${response.run.papel}\nVai até a fila acabar; use \"Parar esteira\" para interromper.`;
-  }
+  if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") say("Já tem uma tarefa em andamento — espere terminar.");
+  else if (!response.ok) say(`Erro: ${response.error}`);
+  else if (!response.run) say("Não há nada para solicitar agora.");
+  else say("");
+  await load();
+});
+
+$("stopBelt").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: "STOP_BELT" });
+  say(response.wasActive ? "Parando depois da etapa atual…" : "Nada em andamento.");
+  await load();
 });
 
 load();
+// O popup acompanha o andamento sozinho enquanto está aberto.
+setInterval(load, 2000);
