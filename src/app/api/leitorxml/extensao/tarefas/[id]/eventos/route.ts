@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
+import { SEFAZ_MAX_WAIT_DAYS } from "@/lib/leitorxml/tasks";
 
 export const runtime = "nodejs";
 const eventoSchema = z.object({
@@ -28,6 +29,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { data, error } = await db.from("xml_collection_tasks").update(update).eq("id", id).select("id,establishment_id").maybeSingle();
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
+    if (input.status === "SOLICITADO" || input.status === "PROCESSANDO_SEFAZ") {
+      // Prazo de espera da SEFAZ, contado desde o PRIMEIRO registro do pedido (só grava se ainda não tiver).
+      const deadline = new Date(Date.now() + SEFAZ_MAX_WAIT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      await db.from("xml_collection_tasks").update({ prazo_alerta_at: deadline }).eq("id", id).is("prazo_alerta_at", null);
+    }
     if (finalStatuses.has(input.status)) {
       await db.from("xml_watch_establishments").update({ locked_by_user_id: null, locked_at: null }).eq("id", data.establishment_id);
     }

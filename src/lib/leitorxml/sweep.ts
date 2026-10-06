@@ -19,7 +19,7 @@ export type LeitorXmlSweepResult = { escalated: number; monthlyBatch: { ranToday
  * gera o lote mensal do mês anterior fechado — idempotente pela UNIQUE da
  * tabela, então rodar de novo em dias seguintes não duplica nada, só cobre o
  * caso do disparo não cair exatamente no dia 10. Em qualquer dia, escalona
- * tarefas paradas em PROCESSANDO_SEFAZ há mais de 24h para revisão manual
+ * solicitações que passaram do prazo de espera da SEFAZ (SEFAZ_MAX_WAIT_DAYS, contado desde o pedido) para revisão manual
  * (§4 da Descoberta: a previsão de conclusão da SEFAZ não é confiável).
  */
 export async function runLeitorXmlSweep(input: { db: SupabaseClient; now?: Date }): Promise<LeitorXmlSweepResult> {

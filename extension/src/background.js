@@ -255,7 +255,7 @@ async function findWorkTabId() {
 /** A tarefa atual foi solicitada: conta e segue pra próxima (da mesma empresa se houver, senão a próxima empresa). Sem esteira ativa, só encerra a corrida. */
 async function beltOnSuccess(tabId, previousRun) {
   const belt = await getBelt();
-  if (!belt?.active) {
+  if (!belt?.active || (belt.kind ?? "REQUEST") !== "REQUEST") {
     await finishBatchAndReturnHome(tabId);
     return { done: true };
   }
@@ -295,7 +295,7 @@ async function beltOnSuccess(tabId, previousRun) {
 /** A tarefa atual falhou (já registrada no backend): a esteira segue pra próxima empresa, a menos que as falhas seguidas passem do limite. */
 async function beltOnFailure(tabId, motivo) {
   const belt = await getBelt();
-  if (!belt?.active) return;
+  if (!belt?.active || (belt.kind ?? "REQUEST") !== "REQUEST") return;
   const failures = belt.failures + 1;
   const failed = belt.failed + 1;
   if (belt.stopRequested || failures >= BELT_MAX_CONSECUTIVE_FAILURES) {
@@ -311,9 +311,6 @@ async function beltOnFailure(tabId, motivo) {
     await endBelt(`Esteira interrompida ao buscar a próxima tarefa: ${error.message}`);
   }
 }
-
-// Quantas empresas um clique em "Conferir resultados" visita (cada uma pode baixar até 3 ZIPs).
-const MAX_TRACK_COMPANIES = 3;
 
 /** Leva a aba pra Página Principal do portal: a aba informada, senão uma já aberta no portal, senão uma nova. */
 async function navigateToHome(preferredTabId) {
@@ -420,6 +417,26 @@ async function startVerification(previousRun, tabId, nextRun) {
   return run;
 }
 
+/** Uma empresa falhou no acompanhamento (não conseguiu entrar, travou...): registra e a passada segue pra próxima, a menos que as falhas seguidas passem do limite. */
+async function trackBeltOnFailure(run, motivo, tabId) {
+  const belt = await getBelt();
+  if (!belt?.active || belt.kind !== "TRACK") return;
+  const failures = belt.failures + 1;
+  const failed = belt.failed + 1;
+  await setBelt({ ...belt, failures, failed });
+  if (belt.stopRequested || failures >= BELT_MAX_CONSECUTIVE_FAILURES) {
+    await endBelt(`Conferência interrompida após ${failures} falha(s) seguida(s) (${belt.processed} empresa(s) conferida(s) antes). Última: ${motivo}`.slice(0, 600));
+    return;
+  }
+  try {
+    const visited = [...(run.trackVisited ?? []), run.establishment.id];
+    const next = await claimNextTrackingCompany(visited, visited.length + 1, tabId);
+    if (!next) await endBelt(`Conferência concluída: ${belt.processed} empresa(s) conferida(s), ${failed} falha(s).`);
+  } catch (error) {
+    await endBelt(`Conferência interrompida ao buscar a próxima empresa: ${error.message}`);
+  }
+}
+
 /** A conferência da aba Solicitações acabou (ou foi pulada por falha): a esteira retoma a próxima tarefa já reivindicada, ou encerra se a fila acabou. */
 async function resumeBeltAfterVerify(tabId) {
   const belt = await getBelt();
@@ -495,6 +512,7 @@ async function failActiveRun(run, motivo, tabId = null) {
   if (run.mode === "TRACK" || run.mode === "SWEEP" || !run.taskId) {
     await chrome.storage.session.set({ lastSweepError: motivo.slice(0, 3900) });
     await clearActiveRun();
+    if (run.mode === "TRACK") await trackBeltOnFailure(run, motivo, tabId ?? (await findWorkTabId()));
     return;
   }
   await reportFalha(run.taskId, motivo);
@@ -630,7 +648,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
             break;
           }
-          await setBelt({ active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+          await setBelt({ kind: "REQUEST", active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
           await chrome.storage.session.remove("lastSweepError");
           const run = await claimNextTaskAndPrepare();
           if (!run) await endBelt("Nada pendente na fila.");
@@ -799,19 +817,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const existing = await getActiveRun();
           if (existing) return sendResponse({ ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing });
           await chrome.storage.session.remove("lastSweepError");
-          sendResponse({ ok: true, run: await claimNextTrackingCompany([], 1, sender.tab?.id) });
+          await setBelt({ kind: "TRACK", active: true, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+          const first = await claimNextTrackingCompany([], 1, sender.tab?.id);
+          if (!first) await endBelt("Nenhuma solicitação pendente de conferência.");
+          sendResponse({ ok: true, run: first });
           break;
         }
         case "TRACK_NEXT_COMPANY": {
           const previous = await getActiveRun();
           if (!previous || previous.mode !== "TRACK") return sendResponse({ ok: false, error: "NO_TRACKING_RUN" });
           const visited = [...(previous.trackVisited ?? []), previous.establishment.id];
-          if (visited.length >= MAX_TRACK_COMPANIES) {
+          const belt = await getBelt();
+          const processed = (belt?.processed ?? 0) + 1;
+          if (belt?.active) await setBelt({ ...belt, processed, failures: 0 });
+          if (belt?.stopRequested || visited.length >= BELT_HARD_CAP) {
+            await endBelt(`Conferência parada ${belt?.stopRequested ? "a pedido" : "no limite de segurança"}: ${processed} empresa(s) conferida(s), ${belt?.failed ?? 0} falha(s).`);
             await finishBatchAndReturnHome(sender.tab?.id);
-            return sendResponse({ ok: true, done: true, reason: "LIMITE_DO_LOTE" });
+            return sendResponse({ ok: true, done: true });
           }
           const run = await claimNextTrackingCompany(visited, visited.length + 1, sender.tab?.id);
-          if (!run) await finishBatchAndReturnHome(sender.tab?.id);
+          if (!run) {
+            await endBelt(`Conferência concluída: ${processed} empresa(s) conferida(s), ${belt?.failed ?? 0} falha(s).`);
+            await finishBatchAndReturnHome(sender.tab?.id);
+          }
           sendResponse({ ok: true, done: !run, run });
           break;
         }

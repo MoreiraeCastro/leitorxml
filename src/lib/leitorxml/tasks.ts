@@ -110,16 +110,22 @@ export async function registerDiscoveredEstablishment(db: SupabaseClient, input:
   return { establishmentId: establishment.id as string, tasksCreated };
 }
 
-/** Escalona para revisão manual quem ficou parado em PROCESSANDO_SEFAZ por mais de 24h sem atualização — a "previsão de conclusão" da SEFAZ não é um sinal confiável (§4 da Descoberta). */
-export async function escalateStaleProcessing(db: SupabaseClient, options: { olderThanHours?: number; now?: Date } = {}) {
-  const olderThanHours = options.olderThanHours ?? 24;
+/**
+ * Quanto esperar a SEFAZ processar um pedido antes de pedir revisão manual. No dia 10-11 (pico) o
+ * processamento chega a levar ATÉ 5 DIAS (observado pelo usuário), então o prazo é 7. É contado DESDE O
+ * PEDIDO (prazo_alerta_at, gravado ao virar SOLICITADO) — não pelo updated_at, que é renovado a cada
+ * conferência e tornaria a regra "24h sem avanço" tanto errada (escalaria no dia seguinte) quanto inútil.
+ */
+export const SEFAZ_MAX_WAIT_DAYS = 7;
+
+/** Escalona para revisão manual as solicitações que passaram do prazo de espera da SEFAZ (§4 da Descoberta: a previsão de conclusão da SEFAZ não é um sinal confiável). */
+export async function escalateStaleProcessing(db: SupabaseClient, options: { now?: Date } = {}) {
   const now = options.now ?? new Date();
-  const threshold = new Date(now.getTime() - olderThanHours * 60 * 60 * 1000).toISOString();
   const { data, error } = await db
     .from("xml_collection_tasks")
-    .update({ status: "AGUARDANDO_INTERVENCAO", erro_mensagem: `Sem avanço da SEFAZ por mais de ${olderThanHours}h — verificar manualmente.`, updated_at: now.toISOString() })
-    .eq("status", "PROCESSANDO_SEFAZ")
-    .lt("updated_at", threshold)
+    .update({ status: "AGUARDANDO_INTERVENCAO", erro_mensagem: `Sem processamento da SEFAZ no prazo de ${SEFAZ_MAX_WAIT_DAYS} dias — verificar manualmente.`, updated_at: now.toISOString() })
+    .in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ"])
+    .lt("prazo_alerta_at", now.toISOString())
     .select("id");
   if (error) throw new Error("STALE_TASKS_ESCALATION_FAILED");
   return { escalated: data?.length ?? 0 };

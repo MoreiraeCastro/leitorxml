@@ -29,8 +29,8 @@ function describeRun(run) {
 
 function describeBelt(belt) {
   if (!belt) return "";
-  const progresso = `${belt.processed} solicitada(s), ${belt.failed} falha(s)`;
-  if (belt.active) return `\nEsteira ativa: ${progresso}${belt.stopRequested ? " — parando após a tarefa atual" : ""}`;
+  const progresso = belt.kind === "TRACK" ? `${belt.processed} empresa(s) conferida(s), ${belt.failed} falha(s)` : `${belt.processed} solicitada(s), ${belt.failed} falha(s)`;
+  if (belt.active) return `\n${belt.kind === "TRACK" ? "Conferência ativa" : "Esteira ativa"}: ${progresso}${belt.stopRequested ? " — parando após a etapa atual" : ""}`;
   return belt.summary ? `\n${belt.summary}` : "";
 }
 
@@ -62,7 +62,7 @@ document.getElementById("startTracking").addEventListener("click", async () => {
   if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") statusEl.textContent = `Já tem uma corrida em andamento — espera terminar.\n${describeRun(response.run)}`;
   else if (!response.ok) statusEl.textContent = `Erro: ${response.error}`;
   else if (!response.run) statusEl.textContent = "Nenhuma solicitação pendente de conferência.";
-  else statusEl.textContent = describeRun(response.run);
+  else statusEl.textContent = `${describeRun(response.run)}\nVai até conferir todas as empresas com pendências; use "Parar esteira" para interromper.`;
 });
 
 document.getElementById("stopBelt").addEventListener("click", async () => {
