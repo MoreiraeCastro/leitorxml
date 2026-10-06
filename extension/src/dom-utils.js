@@ -317,7 +317,8 @@ async function realNavigationClick(el, { downloadTaskId = null } = {}) {
   // (CDP) conta como gesto de usuário de verdade e ativa esse fallback nativo
   // de um jeito que o clique sintético de antes não ativava.
   const form = el.closest("form");
-  if (form) form.addEventListener("submit", (event) => event.preventDefault(), { capture: true, once: true });
+  // Não bloqueia o submit quando o clique é de download: o botão pode ser um submit nativo (resposta anexada).
+  if (form && !downloadTaskId) form.addEventListener("submit", (event) => event.preventDefault(), { capture: true, once: true });
   // behavior:"instant" evita rolagem suave — se a página tiver scroll-behavior:
   // smooth (comum em CSS moderno) e a gente medir a posição antes da rolagem
   // terminar, o clique via CDP acerta coordenadas erradas sem erro nenhum.

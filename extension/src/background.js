@@ -843,6 +843,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, done: !run, run });
           break;
         }
+        case "TRACK_GO_BACK": {
+          // Da página de detalhe da solicitação de volta pro painel da empresa (com reload de verdade, sem bfcache).
+          if (sender.tab) await goBackWithFreshLoad(sender.tab.id);
+          sendResponse({ ok: true });
+          break;
+        }
         case "TRACK_REPORT": {
           await reportEvento(message.taskId, { status: message.status, ...(message.sefazReferencia ? { sefazReferencia: message.sefazReferencia } : {}) });
           sendResponse({ ok: true });

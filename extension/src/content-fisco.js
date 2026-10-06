@@ -320,6 +320,13 @@ async function failTrackedTask(task, motivo) {
   await chrome.runtime.sendMessage({ type: "TRACK_TASK_FAILURE", taskId: task.id, motivo: `${motivo}${describeDiagnostics()}` });
 }
 
+/** Marca tarefas como já tratadas nesta visita (persistido na corrida: a página navega pra detalhe e volta, e o laço recomeça). */
+async function markTrackDone(taskId, extra = {}) {
+  const current = await getActiveRun();
+  await setRunFlag({ trackDone: [...new Set([...(current?.trackDone ?? []), taskId])], ...extra });
+}
+
+/** Devolve true se a corrida NAVEGOU (abriu a página de detalhe pra baixar) — quem chamou deve parar o laço; ele recomeça quando voltarmos. */
 async function trackOneTask(task, row, { verifyOnly = false } = {}) {
   const status = classifyTrackedSituacao(row.situacaoTexto);
   note(`${task.tipoDocumento}/${task.papel}: "${row.situacaoTexto}" -> ${status}`);
@@ -327,42 +334,38 @@ async function trackOneTask(task, row, { verifyOnly = false } = {}) {
 
   if (status === "DESCONHECIDA") {
     await failTrackedTask(task, `SITUACAO_DESCONHECIDA na aba Solicitações: "${row.situacaoTexto}" (referência: ${row.referencia})`);
-    return;
+    return false;
   }
   if (status !== "PRONTO_PARA_BAIXAR") {
     await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status, sefazReferencia });
-    return;
+    return false;
   }
 
   await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status: "PRONTO_PARA_BAIXAR", sefazReferencia });
-  if (verifyOnly) return; // esteira de solicitações: só confere que existe e qual a situação; o download é uma etapa posterior
+  if (verifyOnly) return false; // esteira de solicitações: só confere que existe e qual a situação; o download é a esteira de acompanhamento
   if (!row.situacaoLink) {
-    await failTrackedTask(task, "LINK_DE_DOWNLOAD_NAO_ENCONTRADO na linha da solicitação");
-    return;
+    await failTrackedTask(task, "LINK_DA_SOLICITACAO_NAO_ENCONTRADO na linha da aba Solicitações");
+    return false;
   }
-  const response = await realNavigationClick(row.situacaoLink, { downloadTaskId: task.id });
-  const result = response.result ?? {};
-  // Se abriu um modal em vez de baixar (ex.: aviso de expirada), registra o texto e fecha.
-  const dialog = [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetWidth > 0 && d.offsetHeight > 0);
-  const dialogText = dialog?.textContent.replace(/\s+/g, " ").trim().slice(0, 200);
-  if (dialog) {
-    const fecharX = dialog.querySelector(".ui-dialog-titlebar-close, a.ui-dialog-titlebar-icon");
-    if (fecharX) await realNavigationClick(fecharX);
-  }
-  if (result.ok) {
-    note(`${task.tipoDocumento}/${task.papel}: ZIP capturado (${result.bytes} bytes) e enviado`);
-    return;
-  }
-  await failTrackedTask(task, `DOWNLOAD_FALHOU: ${result.error ?? "sem resultado"}${result.diag ? ` | ${result.diag}` : ""}${dialogText ? ` | modal: "${dialogText}"` : ""}`);
+  // Confirmado ao vivo (2026-10-06): clicar em "Processada" NÃO baixa — abre a página de detalhe da
+  // solicitação (arquivo(s), "Disponibilizado em", "Download em", "Expira em" — 7 dias) e é lá que fica o
+  // botão de download. Marca a tarefa como tratada e guarda qual baixar ANTES de navegar: o script desta
+  // página morre na navegação; quem continua é a página de detalhe (`downloadFromDetailPage`).
+  await markTrackDone(task.id, { downloadTaskId: task.id });
+  note(`${task.tipoDocumento}/${task.papel}: abrindo a página da solicitação pra baixar`);
+  await realNavigationClick(row.situacaoLink);
+  return true;
 }
 
 /**
  * Visita uma empresa: abre a aba Solicitações, acha a linha de cada tarefa pendente (percorrendo as
- * páginas da tabela) e age — atualiza a situação ou baixa o ZIP. Uma tarefa falhar não encerra a visita.
+ * páginas da tabela) e age — atualiza a situação ou abre o detalhe pra baixar o ZIP. Uma tarefa falhar
+ * não encerra a visita. Ao voltar do detalhe, o laço recomeça pulando as tarefas já tratadas (`trackDone`).
  */
 async function trackSolicitacoes(run) {
   await openSolicitacoesTab();
-  const pending = new Map(run.trackTasks.map((task) => [task.id, task]));
+  const done = new Set(run.trackDone ?? []);
+  const pending = new Map(run.trackTasks.filter((task) => !done.has(task.id)).map((task) => [task.id, task]));
   let rowsSeen = 0;
   for (let page = 1; page <= 10 && pending.size; page++) {
     const rows = readSolicitacaoRows();
@@ -373,10 +376,12 @@ async function trackSolicitacoes(run) {
       if (!row) continue;
       pending.delete(task.id);
       try {
-        await trackOneTask(task, row, { verifyOnly: Boolean(run.verifyOnly) });
+        const navigated = await trackOneTask(task, row, { verifyOnly: Boolean(run.verifyOnly) });
+        if (navigated) return; // foi pra página de detalhe; volta pra cá e o laço recomeça
       } catch (error) {
         await failTrackedTask(task, `ERRO_NO_ACOMPANHAMENTO: ${error.message}`);
       }
+      await markTrackDone(task.id);
     }
     if (!pending.size) break;
     const next = document.querySelector(`[id="${SOLICITACOES_TABLE_ID}"] .ui-paginator-next`);
@@ -388,6 +393,50 @@ async function trackSolicitacoes(run) {
     await failTrackedTask(task, `SOLICITACAO_NAO_ENCONTRADA_NO_HISTORICO (${task.tipoDocumento}/${task.papel} ${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}; ${rowsSeen} linha(s) lidas)`);
   }
   await chrome.runtime.sendMessage({ type: run.verifyOnly ? "BELT_VERIFY_DONE" : "TRACK_NEXT_COMPANY" });
+}
+
+/** Tabela de arquivos da página de detalhe da solicitação (colunas: Arquivo | Disponibilizado em | Download em | Expira em). */
+function findFilesTable() {
+  return [...document.querySelectorAll("table")].find((table) => /Arquivo/i.test(table.textContent) && /Expira em/i.test(table.textContent) && table.querySelector("tbody tr td")) ?? null;
+}
+
+/**
+ * Página de detalhe de uma solicitação "Processada": clica no botão de download de cada arquivo da
+ * tabela (o ZIP é capturado na resposta de rede, via CDP) e volta pra aba Solicitações da empresa.
+ */
+async function downloadFromDetailPage(run) {
+  const task = run.trackTasks.find((candidate) => candidate.id === run.downloadTaskId);
+  const finish = async () => {
+    await setRunFlag({ downloadTaskId: null });
+    await chrome.runtime.sendMessage({ type: "TRACK_GO_BACK" });
+  };
+  if (!task) {
+    await finish();
+    return;
+  }
+  try {
+    const table = await waitFor(findFilesTable, { timeoutMs: 15000, label: "tabela de arquivos da solicitação aparecer" });
+    const rows = [...table.querySelectorAll("tbody tr")].filter((row) => row.querySelector("td"));
+    note(`página da solicitação: ${rows.length} arquivo(s): ${rows.map((row) => row.textContent.replace(/\s+/g, " ").trim().slice(0, 100)).join(" | ")}`);
+    if (!rows.length) throw new Error("Nenhum arquivo listado na página da solicitação");
+
+    const errors = [];
+    for (const row of rows) {
+      const button = row.querySelector("td a, td button, td [role='button']");
+      if (!button) {
+        errors.push("linha sem botão de download");
+        continue;
+      }
+      const response = await realNavigationClick(button, { downloadTaskId: task.id });
+      const result = response.result ?? {};
+      if (result.ok) note(`ZIP capturado (${result.bytes} bytes) e enviado`);
+      else errors.push(`${result.error ?? "sem resultado"}${result.diag ? ` | ${result.diag}` : ""}`);
+    }
+    if (errors.length) await failTrackedTask(task, `DOWNLOAD_FALHOU: ${errors.join(" ;; ")}`);
+  } catch (error) {
+    await failTrackedTask(task, `ERRO_NA_PAGINA_DA_SOLICITACAO: ${error.message}`);
+  }
+  await finish();
 }
 
 // ---------- Página: solicitacaoExtracaoDfe.xhtml (formulário) ----------
@@ -540,6 +589,19 @@ async function fillAndSubmitExtractionForm(run) {
   if (runExpired(run)) {
     await reportFailure(`RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`);
     return;
+  }
+
+  if (run.mode === "TRACK" && run.downloadTaskId) {
+    const onCompanyPage = location.pathname.includes("mainAbasContribuinte") || location.pathname.includes("principalContribuintes");
+    if (!onCompanyPage) {
+      await downloadFromDetailPage(run);
+      return;
+    }
+    // Voltamos pro painel/lista sem ter passado pela página de detalhe: o clique em "Processada" não abriu nada.
+    const task = run.trackTasks.find((candidate) => candidate.id === run.downloadTaskId);
+    if (task) await failTrackedTask(task, "PAGINA_DA_SOLICITACAO_NAO_ABRIU depois de clicar na situação Processada");
+    await setRunFlag({ downloadTaskId: null });
+    run.downloadTaskId = null;
   }
 
   if (run.mode === "SWEEP") {
