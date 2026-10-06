@@ -207,7 +207,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const run = await getActiveRun();
   if (!run || run.mode === "SWEEP" || typeof run.startedAt !== "number") return;
   if (run.mode === "TRACK") {
-    if (Date.now() - run.startedAt < TRACK_STALL_MS) return;
+    if (Date.now() - run.startedAt < (run.verifyOnly ? RUN_STALL_MS : TRACK_STALL_MS)) return;
     const { lastNote } = await chrome.storage.session.get("lastNote");
     await failActiveRun(run, `ACOMPANHAMENTO_TRAVADO em ${run.establishment?.razaoSocial}: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar; último passo: "${lastNote?.step ?? "nenhum"}" em ${lastNote?.path ?? "?"}`);
     return;
@@ -273,14 +273,23 @@ async function beltOnSuccess(tabId, previousRun) {
     return { done: true };
   }
   await setBelt({ ...belt, processed, failures: 0 });
-  const run = await claimNextTaskAndPrepare(1, previousRun?.establishment?.id ?? null, tabId);
-  if (!run) {
-    await endBelt(`Fila concluída: ${processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
-    await setBelt({ ...(await getBelt()), processed });
-    await finishBatchAndReturnHome(tabId);
-    return { done: true };
+  const previousEstablishmentId = previousRun?.establishment?.id ?? null;
+  const next = await claimNextTaskAndPrepare(1, previousEstablishmentId, tabId, { launch: false });
+  if (next && next.establishment?.id === previousEstablishmentId) {
+    await launchRun(next, tabId); // ainda tem combinação dessa empresa: segue sem sair dela
+    return { done: false, run: next };
   }
-  return { done: false, run };
+  // Acabaram as tarefas dessa empresa: confere a aba Solicitações antes de sair dela.
+  const verification = await startVerification(previousRun, tabId, next);
+  if (verification) return { done: false, run: verification };
+  if (next) {
+    await launchRun(next, tabId);
+    return { done: false, run: next };
+  }
+  await endBelt(`Fila concluída: ${processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
+  await setBelt({ ...(await getBelt()), processed });
+  await finishBatchAndReturnHome(tabId);
+  return { done: true };
 }
 
 /** A tarefa atual falhou (já registrada no backend): a esteira segue pra próxima empresa, a menos que as falhas seguidas passem do limite. */
@@ -337,7 +346,7 @@ async function finishBatchAndReturnHome(tabId) {
   if (tabId != null) await chrome.tabs.update(tabId, { url: HOME_URL }).catch(() => {});
 }
 
-async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = null, tabId = null) {
+async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = null, tabId = null, { launch = true } = {}) {
   const previousRun = await getActiveRun();
   // Ao encadear, prefere as tarefas pendentes da empresa em que já estamos (as 3 combinações em
   // sequência, sem voltar ao modal de procurações a cada solicitação).
@@ -372,15 +381,67 @@ async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = n
     chainCount,
   };
   await setActiveRun(run);
-
-  if (!sameEstablishment) {
-    await navigateToHome(tabId);
-  } else {
-    // mesma página, só avisa o content script já carregado pra prosseguir.
-    const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
-    if (tab) chrome.tabs.sendMessage(tab.id, { type: "RUN_STEP" }).catch(() => {});
-  }
+  if (launch) await launchRun(run, tabId);
   return run;
+}
+
+/** Põe a corrida pra andar: empresa nova → volta pra Página Principal (reentra por procuração); mesma empresa → recarrega a aba onde já estamos. */
+async function launchRun(run, tabId = null) {
+  if (run.step === "NAVIGATE_HOME") {
+    await navigateToHome(tabId);
+    return;
+  }
+  const targetId = tabId ?? (await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true }))[0]?.id;
+  if (targetId != null) chrome.tabs.sendMessage(targetId, { type: "RUN_STEP" }).catch(() => {});
+}
+
+/**
+ * A empresa terminou (ou a fila acabou): antes de sair, confere a aba Solicitações dela — acha cada
+ * tarefa que acabamos de marcar SOLICITADO e registra a situação, SEM baixar nada. A próxima tarefa já
+ * reivindicada fica guardada em `belt.resume` e a esteira a retoma quando a conferência termina.
+ * Devolve a corrida de conferência, ou null se não há o que conferir (ou a consulta falhou).
+ */
+async function startVerification(previousRun, tabId, nextRun) {
+  const establishmentId = previousRun?.establishment?.id;
+  if (!establishmentId) return null;
+  let tasks;
+  let establishment;
+  try {
+    ({ tasks, establishment } = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento?establishmentId=${encodeURIComponent(establishmentId)}`)).json());
+  } catch {
+    return null;
+  }
+  if (!establishment || !tasks?.length) return null;
+  const belt = (await getBelt()) ?? {};
+  await setBelt({ ...belt, resume: nextRun ?? null });
+  const run = { mode: "TRACK", verifyOnly: true, step: "ON_ESTABLISHMENT", startedAt: Date.now(), establishment, trackTasks: tasks, trackVisited: [], trackCount: 1 };
+  await setActiveRun(run);
+  await launchRun(run, tabId);
+  return run;
+}
+
+/** A conferência da aba Solicitações acabou (ou foi pulada por falha): a esteira retoma a próxima tarefa já reivindicada, ou encerra se a fila acabou. */
+async function resumeBeltAfterVerify(tabId) {
+  const belt = await getBelt();
+  const next = belt?.resume ?? null;
+  if (belt) await setBelt({ ...belt, resume: null });
+  if (!belt?.active) {
+    await finishBatchAndReturnHome(tabId);
+    return;
+  }
+  if (belt.stopRequested) {
+    await endBelt(`Esteira parada a pedido: ${belt.processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
+    await finishBatchAndReturnHome(tabId);
+    return;
+  }
+  if (!next) {
+    await endBelt(`Fila concluída: ${belt.processed} tarefa(s) solicitada(s), ${belt.failed} falha(s).`);
+    await finishBatchAndReturnHome(tabId);
+    return;
+  }
+  const run = { ...next, startedAt: Date.now() };
+  await setActiveRun(run);
+  await launchRun(run, tabId);
 }
 
 /**
@@ -425,6 +486,12 @@ async function reportFalha(taskId, motivo) {
 
 /** Falha da corrida ativa: no acompanhamento/varredura não há UMA tarefa (guarda o erro pro popup); na solicitação, falha a tarefa. */
 async function failActiveRun(run, motivo, tabId = null) {
+  if (run.mode === "TRACK" && run.verifyOnly) {
+    // A conferência da aba Solicitações falhou/travou: registra, mas a esteira segue pra próxima empresa.
+    await chrome.storage.session.set({ lastSweepError: `Conferência da aba Solicitações pulada (${run.establishment?.razaoSocial}): ${motivo}`.slice(0, 900) });
+    await resumeBeltAfterVerify(tabId ?? (await findWorkTabId()));
+    return;
+  }
   if (run.mode === "TRACK" || run.mode === "SWEEP" || !run.taskId) {
     await chrome.storage.session.set({ lastSweepError: motivo.slice(0, 3900) });
     await clearActiveRun();
@@ -770,6 +837,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!previous) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
           const outcome = await beltOnSuccess(sender.tab?.id, previous);
           sendResponse({ ok: true, done: outcome.done, run: outcome.run ?? null });
+          break;
+        }
+        case "BELT_VERIFY_DONE": {
+          const current = await getActiveRun();
+          if (!current?.verifyOnly) return sendResponse({ ok: false, error: "NO_VERIFICATION_RUN" });
+          await resumeBeltAfterVerify(sender.tab?.id);
+          sendResponse({ ok: true });
           break;
         }
         case "STOP_BELT": {

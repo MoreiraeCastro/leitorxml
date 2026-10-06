@@ -15,7 +15,8 @@ export async function GET(request: Request) {
     const exclude = (new URL(request.url).searchParams.get("exclude") ?? "")
       .split(",")
       .filter((value) => z.string().uuid().safeParse(value).success);
-    const batch = await claimNextTrackingBatch(db, identity.userId, { excludeEstablishmentIds: exclude });
+    const only = z.string().uuid().safeParse(new URL(request.url).searchParams.get("establishmentId"));
+    const batch = await claimNextTrackingBatch(db, identity.userId, { excludeEstablishmentIds: exclude, ...(only.success ? { onlyEstablishmentId: only.data } : {}) });
     if (!batch) return NextResponse.json({ establishment: null });
     return NextResponse.json({
       establishment: {

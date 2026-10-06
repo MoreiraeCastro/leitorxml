@@ -195,15 +195,13 @@ const TRACKING_COLUMNS =
  * mecanismo da fila de solicitações); `excludeEstablishmentIds` evita voltar numa empresa já visitada no
  * mesmo lote (tarefas ainda "aguardando processamento" continuam pendentes e seriam reclamadas de novo).
  */
-export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; now?: Date } = {}) {
+export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; onlyEstablishmentId?: string; now?: Date } = {}) {
   const now = options.now ?? new Date();
   const excluded = new Set(options.excludeEstablishmentIds ?? []);
-  const { data, error } = await db
-    .from("xml_collection_tasks")
-    .select(TRACKING_COLUMNS)
-    .in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ"])
-    .order("updated_at", { ascending: true })
-    .limit(300);
+  let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ"]);
+  // `onlyEstablishmentId`: a esteira conferindo a aba Solicitações da empresa que ACABOU de solicitar (a trava é do mesmo usuário).
+  if (options.onlyEstablishmentId) query = query.eq("establishment_id", options.onlyEstablishmentId);
+  const { data, error } = await query.order("updated_at", { ascending: true }).limit(300);
   if (error) throw new Error("TRACKING_LOOKUP_FAILED");
 
   const byEstablishment = new Map<string, NonNullable<typeof data>>();

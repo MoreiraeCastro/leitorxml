@@ -196,11 +196,18 @@ function readHeaderCnpj() {
 async function openExtractionForm() {
   const link = document.getElementById("frmMenuLateral:fieldExtracaoID") ?? findByExactText("a", "Extração de documentos fiscais");
   if (!link) throw new Error("LINK_EXTRACAO_NAO_ENCONTRADO");
+  const formOpened = () => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe");
   await realNavigationClick(link);
-  await waitFor(() => location.pathname.includes("solicitacaoExtracaoDfe") || document.getElementById("FrmSolicitarExtracaoDfe"), {
-    timeoutMs: 15000,
-    label: "abrir formulário de extração",
-  });
+  try {
+    await waitFor(formOpened, { timeoutMs: 15000, label: "abrir formulário de extração" });
+  } catch {
+    // Visto ao vivo (2026-10-06): o 1º clique às vezes não navega (site lento); uma 2ª tentativa resolve a maioria.
+    note("formulário não abriu em 15s — clicando de novo em Extração de documentos fiscais");
+    const again = document.getElementById("frmMenuLateral:fieldExtracaoID") ?? findByExactText("a", "Extração de documentos fiscais");
+    if (!again) throw new Error("LINK_EXTRACAO_NAO_ENCONTRADO (2ª tentativa)");
+    await realNavigationClick(again);
+    await waitFor(formOpened, { timeoutMs: 20000, label: "abrir formulário de extração (2ª tentativa)" });
+  }
 }
 
 async function openSolicitacoesTab() {
@@ -311,7 +318,7 @@ async function failTrackedTask(task, motivo) {
   await chrome.runtime.sendMessage({ type: "TRACK_TASK_FAILURE", taskId: task.id, motivo: `${motivo}${describeDiagnostics()}` });
 }
 
-async function trackOneTask(task, row) {
+async function trackOneTask(task, row, { verifyOnly = false } = {}) {
   const status = classifyTrackedSituacao(row.situacaoTexto);
   note(`${task.tipoDocumento}/${task.papel}: "${row.situacaoTexto}" -> ${status}`);
   const sefazReferencia = row.referencia.slice(0, 120);
@@ -326,6 +333,7 @@ async function trackOneTask(task, row) {
   }
 
   await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status: "PRONTO_PARA_BAIXAR", sefazReferencia });
+  if (verifyOnly) return; // esteira de solicitações: só confere que existe e qual a situação; o download é uma etapa posterior
   if (!row.situacaoLink) {
     await failTrackedTask(task, "LINK_DE_DOWNLOAD_NAO_ENCONTRADO na linha da solicitação");
     return;
@@ -363,7 +371,7 @@ async function trackSolicitacoes(run) {
       if (!row) continue;
       pending.delete(task.id);
       try {
-        await trackOneTask(task, row);
+        await trackOneTask(task, row, { verifyOnly: Boolean(run.verifyOnly) });
       } catch (error) {
         await failTrackedTask(task, `ERRO_NO_ACOMPANHAMENTO: ${error.message}`);
       }
@@ -377,7 +385,7 @@ async function trackSolicitacoes(run) {
   for (const task of pending.values()) {
     await failTrackedTask(task, `SOLICITACAO_NAO_ENCONTRADA_NO_HISTORICO (${task.tipoDocumento}/${task.papel} ${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}; ${rowsSeen} linha(s) lidas)`);
   }
-  await chrome.runtime.sendMessage({ type: "TRACK_NEXT_COMPANY" });
+  await chrome.runtime.sendMessage({ type: run.verifyOnly ? "BELT_VERIFY_DONE" : "TRACK_NEXT_COMPANY" });
 }
 
 // ---------- Página: solicitacaoExtracaoDfe.xhtml (formulário) ----------
@@ -471,12 +479,21 @@ async function fillAndSubmitExtractionForm(run) {
   // O "×" da barra de título está no documento principal e fecha o mesmo diálogo.
   const findOpenDialog = () => [...document.querySelectorAll(".ui-dialog")].find((d) => d.offsetWidth > 0 && d.offsetHeight > 0);
   const dialog = await waitFor(findOpenDialog, { timeoutMs: 15000, label: "modal (.ui-dialog) da solicitação de extração aparecer" });
+  // O modal apareceu = a solicitação existe no site. Marca AGORA (antes de ler o texto ou qualquer outra
+  // coisa): visto ao vivo (2026-10-06) o script da página morria logo depois de ler o modal e a tarefa
+  // virava RUN_TRAVADA mesmo com a solicitação criada. Se o texto depois indicar erro, a falha sobrescreve.
+  await setRunFlag({ formSubmitted: true });
+  await reportStatus("SOLICITADO", { sefazReferencia: `Enviado: ${enviado.resumo}`.slice(0, 120) });
+  note("modal da solicitação apareceu — marcada SOLICITADO");
   const readDialogText = () => {
     let iframeText = "";
     try {
       iframeText = dialog.querySelector("iframe")?.contentDocument?.body?.textContent ?? "";
     } catch {}
-    return `${dialog.textContent} ${iframeText}`.replace(/\s+/g, " ").trim();
+    // O diálogo do PrimeFaces carrega <script> inline (Growl etc.): sem removê-los o textContent vem com código no meio.
+    const clone = dialog.cloneNode(true);
+    clone.querySelectorAll("script, style").forEach((node) => node.remove());
+    return `${clone.textContent} ${iframeText}`.replace(/\s+/g, " ").trim();
   };
   const titleText = dialog.querySelector(".ui-dialog-title")?.textContent.trim() ?? "";
   // A mensagem pode carregar um instante depois do diálogo abrir.
@@ -489,11 +506,8 @@ async function fillAndSubmitExtractionForm(run) {
   }
   const solicitacaoExistente = modalText.match(/Consulte a solicita[cç][aã]o (.+?) no hist[oó]rico/i)?.[1];
 
-  // Marca AGORA, antes de qualquer navegação: o script desta página é destruído quando o navegador
-  // sai dela, então qualquer coisa depois do clique em "Voltar" nunca rodaria.
-  await setRunFlag({ formSubmitted: true });
-  // Referência gravada na tarefa = auditoria: a solicitação já existente citada pelo site, ou o que o formulário de fato enviou.
-  await reportStatus("SOLICITADO", { sefazReferencia: (solicitacaoExistente ?? `Enviado: ${enviado.resumo}`).slice(0, 120) });
+  // Se o site citou uma solicitação já existente (duplicada), a referência dela é a melhor auditoria.
+  if (solicitacaoExistente) await reportStatus("SOLICITADO", { sefazReferencia: solicitacaoExistente.slice(0, 120) });
 
   const fecharX = dialog.querySelector(".ui-dialog-titlebar-close, a.ui-dialog-titlebar-icon");
   if (!fecharX) throw new Error("BOTAO_FECHAR_DO_MODAL_NAO_ENCONTRADO (× da barra de título)");
@@ -556,6 +570,10 @@ async function fillAndSubmitExtractionForm(run) {
       return; // navegação leva pra mainAbasContribuinte; script reinjeta lá.
     }
 
+    if (location.pathname.includes("solicitacaoExtracaoDfe") && run.mode === "TRACK") {
+      await reportFailure("CONFERENCIA_EM_PAGINA_INESPERADA: a aba estava no formulário de extração, esperava o painel da empresa");
+      return;
+    }
     if (location.pathname.includes("solicitacaoExtracaoDfe")) {
       await fillAndSubmitExtractionForm(run); // marca SOLICITADO e volta pra mainAbasContribuinte por dentro.
       return;

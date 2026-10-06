@@ -17,6 +17,7 @@ function renderConnectionStatus(connectionStatus) {
 
 function describeRun(run) {
   if (!run) return null;
+  if (run.mode === "TRACK" && run.verifyOnly) return `Conferindo a aba Solicitações: ${run.establishment?.razaoSocial ?? "?"}`;
   if (run.mode === "TRACK") return `Conferindo resultados: ${run.establishment?.razaoSocial ?? "?"} (empresa ${run.trackCount ?? 1})`;
   if (run.mode === "SWEEP") {
     const total = run.sweepQueue?.length;
