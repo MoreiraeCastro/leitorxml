@@ -5,6 +5,7 @@ import { Shell } from "@/components/shell";
 import { STATUS_LABELS, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
 import type { XmlCollectionStatus } from "@/lib/leitorxml/types";
 import { marcarRevisado } from "../actions";
+import { enviarTarefaSharePoint } from "@/app/sharepoint/actions";
 
 export const metadata = { title: "Detalhe do pedido" };
 
@@ -35,6 +36,7 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
   const { data: files } = await db.from("xml_collection_files").select("*").eq("task_id", id).order("created_at", { ascending: false });
 
   const revisarAction = marcarRevisado.bind(null, id);
+  const enviarAction = enviarTarefaSharePoint.bind(null, id);
 
   return (
     <Shell session={session}>
@@ -67,7 +69,10 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">Arquivos</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">Arquivos</h2>
+          {task.storage_path_zip && <a href={`/pedidos/${id}/baixar`} className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Baixar ZIP</a>}
+        </div>
         {!files?.length && <p className="mt-3 text-sm text-black/50">Nenhum arquivo recebido ainda.</p>}
         {!!files?.length && (
           <div className="mt-3 overflow-x-auto rounded border border-black/10 bg-white">
@@ -104,6 +109,9 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
         <p className="mt-3 text-sm text-black/60">
           {task.sharepoint_path ?? "Integração com o SharePoint ainda não está configurada (aguardando app registration no Azure AD). O arquivo fica retido em staging até essa etapa existir."}
         </p>
+        {task.storage_path_zip && !task.sharepoint_item_id && (
+          <form action={enviarAction} className="mt-3"><button type="submit" className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Enviar ao SharePoint agora</button></form>
+        )}
         {establishment?.sharepoint_folder_path && <p className="mt-1 text-xs text-black/40">Pasta cadastrada para esta empresa: {establishment.sharepoint_folder_path}</p>}
       </section>
     </Shell>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
 import { validateCollectedZip } from "@/lib/leitorxml/upload-validation";
+import { sendTaskToSharePoint, sharePointReady } from "@/lib/leitorxml/sharepoint";
 
 export const runtime = "nodejs";
 const maxZipBytes = 50 * 1024 * 1024;
@@ -47,7 +48,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (nextStatus === "DISPONIVEL_REVISAO") await db.from("xml_watch_establishments").update({ locked_by_user_id: null, locked_at: null }).eq("id", task.establishment_id);
 
     storagePath = undefined;
-    return NextResponse.json({ ok: true, resultadoValidacao, documentCount: validation.accessKeysFound.length }, { status: 201 });
+    // Já em staging e registrado: o envio ao SharePoint é um passo à parte e não pode desfazer o upload. Se falhar, a tarefa segue em revisão com o erro anotado e a varredura tenta de novo.
+    let sharepoint: "ENVIADO" | "PENDENTE" | "ERRO" | "NAO_CONFIGURADO" = "NAO_CONFIGURADO";
+    if (nextStatus === "DISPONIVEL_REVISAO" && (await sharePointReady(db).catch(() => false))) {
+      sharepoint = (await sendTaskToSharePoint(db, id)).ok ? "ENVIADO" : "ERRO";
+    }
+    return NextResponse.json({ ok: true, resultadoValidacao, documentCount: validation.accessKeysFound.length, sharepoint }, { status: 201 });
   } catch {
     if (storagePath) await db.storage.from("leitorxml-staging").remove([storagePath]);
     return NextResponse.json({ error: "Não foi possível processar o upload." }, { status: 500 });

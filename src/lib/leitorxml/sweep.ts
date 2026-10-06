@@ -1,6 +1,7 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sendPendingToSharePoint } from "./sharepoint";
 import { escalateStaleProcessing, generateMonthlyTasks, previousClosedCompetencia } from "./tasks";
 
 /** Mesmo padrão de src/lib/nfse/reconciliation/sweep.ts: comparação em tempo constante, qualquer diferença de tamanho já é rejeição sem comparar. */
@@ -12,7 +13,7 @@ export function isAuthorizedInternalRequest(providedSecret: string | null, expec
   return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
-export type LeitorXmlSweepResult = { escalated: number; monthlyBatch: { ranToday: boolean; establishments: number; tasksCreated: number } };
+export type LeitorXmlSweepResult = { escalated: number; sharepoint?: { attempted: number; sent: number; failed: number; skipped: boolean } | { error: string }; monthlyBatch: { ranToday: boolean; establishments: number; tasksCreated: number } };
 
 /**
  * Roda a cada poucos dias via cron externo. A partir do dia 10 (inclusive),
@@ -27,5 +28,7 @@ export async function runLeitorXmlSweep(input: { db: SupabaseClient; now?: Date 
   const escalation = await escalateStaleProcessing(input.db, { now });
   const ranToday = now.getUTCDate() >= 10;
   const monthlyBatch = ranToday ? await generateMonthlyTasks(input.db, previousClosedCompetencia(now)) : { establishments: 0, tasksCreated: 0 };
-  return { escalated: escalation.escalated, monthlyBatch: { ranToday, ...monthlyBatch } };
+  // Reenvia pro SharePoint o que ficou em staging (login expirado, pasta ainda não escolhida...). Falha aqui não derruba a varredura.
+  const sharepoint = await sendPendingToSharePoint(input.db).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+  return { escalated: escalation.escalated, sharepoint, monthlyBatch: { ranToday, ...monthlyBatch } };
 }
