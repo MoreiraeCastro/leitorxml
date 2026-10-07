@@ -336,15 +336,15 @@ async function deliverPending() {
 }
 
 // ---------- Cópia para revisão (pasta Downloads deste PC) ----------
-// Quem revisa precisa ter os ZIPs à mão neste PC, mesmo sem OneDrive. Diferente da entrega: NÃO marca nada no portal
-// (o SharePoint continua sendo entregue pelo PC que tem o atalho) e usa outra pasta, fora do atalho do SharePoint.
-const REVIEW_ROOT_FOLDER = "Leitor de XML - Revisão";
+// Todo PC conectado guarda os ZIPs que aguardam revisão em Downloads\Leitor de XML, mesmo sem OneDrive. Não marca nada
+// no portal. Se este PC tem o atalho do SharePoint (interruptor "deliverToFolder"), a pasta já recebe tudo pela
+// entrega e pelo OneDrive, então esta cópia não é necessária.
 let savingCopies = false;
 
 async function saveLocalCopies() {
   if (savingCopies) return { saved: 0, failed: 0, skipped: true };
-  const { localCopies = false, localCopiesDone = [] } = await chrome.storage.local.get(["localCopies", "localCopiesDone"]);
-  if (!localCopies) return { saved: 0, failed: 0, skipped: true };
+  const { deliverToFolder = false, localCopiesDone = [] } = await chrome.storage.local.get(["deliverToFolder", "localCopiesDone"]);
+  if (deliverToFolder) return { saved: 0, failed: 0, skipped: true };
   savingCopies = true;
   let saved = 0;
   let failed = 0;
@@ -354,7 +354,7 @@ async function saveLocalCopies() {
     for (const item of items.filter((candidate) => !done.has(candidate.taskId)).slice(0, 25)) {
       try {
         const { url } = await (await apiFetch(`/api/leitorxml/extensao/tarefas/${item.taskId}/arquivo`)).json();
-        const downloadId = await chrome.downloads.download({ url, filename: `${REVIEW_ROOT_FOLDER}/${item.path}`, conflictAction: "overwrite", saveAs: false });
+        const downloadId = await chrome.downloads.download({ url, filename: `${DELIVERY_ROOT_FOLDER}/${item.path}`, conflictAction: "overwrite", saveAs: false });
         const outcome = await waitDownload(downloadId);
         if (outcome !== "complete") throw new Error(`download ${outcome}`);
         chrome.downloads.erase({ id: downloadId }).catch(() => {});

@@ -13,7 +13,8 @@ function buildCommand(relative: string) {
   return [
     `$alvo = Get-ChildItem $env:USERPROFILE -Directory | ForEach-Object { Join-Path $_.FullName "${alvo}" } | Where-Object { Test-Path $_ } | Select-Object -First 1;`,
     `if (-not $alvo) { throw "Pasta sincronizada não encontrada. Sincronize a biblioteca do SharePoint neste PC primeiro." };`,
-    `New-Item -ItemType Junction -Path "$env:USERPROFILE\\Downloads\\Leitor de XML" -Target $alvo`,
+    `$dest = "$env:USERPROFILE\\Downloads\\Leitor de XML"; if ((Test-Path $dest) -and -not (Get-Item $dest -Force).LinkType) { Rename-Item $dest "Leitor de XML (local)" };`,
+    `New-Item -ItemType Junction -Path $dest -Target $alvo`,
   ].join(" ");
 }
 
@@ -52,17 +53,17 @@ export function SharePointSetup({ referenceName, referenceUrl }: { referenceName
       </section>
 
       <section className={card}>
-        <h2 className="text-sm font-semibold text-[#082240]">2. Configurar um computador (uma vez por PC)</h2>
+        <h2 className="text-sm font-semibold text-[#082240]">2. Só para PC com OneDrive (uma vez por PC)</h2>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-black/70">
           <li>Confirme que a biblioteca do SharePoint está <strong>sincronizada</strong> neste PC (OneDrive) e que a pasta de destino aparece no Explorer.</li>
           <li>Abra o <strong>PowerShell</strong> e cole o comando abaixo. Ele acha a pasta sozinho e cria o atalho <code>Downloads\Leitor de XML</code>.</li>
-          <li>Na extensão: <em>Configurações avançadas → “Salvar os ZIPs na pasta do SharePoint”</em>.</li>
+          <li>Na extensão: <em>Configurações avançadas → “Este PC tem OneDrive: enviar os ZIPs ao SharePoint”</em>.</li>
         </ol>
         <label htmlFor="relative" className="mt-3 block text-xs text-black/50">Caminho da pasta dentro do OneDrive (ajuste só se for diferente)</label>
         <input id="relative" value={relative} onChange={(event) => setRelative(event.target.value)} className="mt-1 w-full rounded border border-black/15 px-2 py-1 font-mono text-xs" />
         <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded border border-black/10 bg-black/[0.03] p-3 text-xs">{command}</pre>
         <button type="button" onClick={copy} className={`${primary} mt-3`}>{copied ? "Copiado!" : "Copiar comando"}</button>
-        <p className="mt-3 text-xs text-black/50">Se já existir uma pasta comum <code>Downloads\Leitor de XML</code>, apague ou renomeie antes de rodar.</p>
+        <p className="mt-3 text-xs text-black/50">Se o PC já tinha a pasta comum <code>Downloads\Leitor de XML</code>, o comando a renomeia para “Leitor de XML (local)”; os ZIPs antigos continuam lá.</p>
       </section>
     </div>
   );

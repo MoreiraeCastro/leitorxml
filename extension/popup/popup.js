@@ -96,7 +96,7 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
 
 let inputsLoaded = false;
 async function load() {
-  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder", "localCopies"]);
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder"]);
   const apiBaseUrl = local.apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml";
   // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
   if (!inputsLoaded) {
@@ -105,7 +105,6 @@ async function load() {
     $("robotMode").checked = Boolean(local.robotMode);
     $("autoRequest").checked = Boolean(local.autoRequestEnabled);
     $("deliverToFolder").checked = Boolean(local.deliverToFolder);
-    $("localCopies").checked = Boolean(local.localCopies);
     inputsLoaded = true;
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
@@ -125,18 +124,12 @@ $("robotMode").addEventListener("change", async (event) => {
 });
 
 $("deliverToFolder").addEventListener("change", async (event) => {
-  if (event.target.checked && !confirm("Antes de ligar: o atalho Downloads\\Leitor de XML precisa apontar para a pasta sincronizada do SharePoint. Sem ele, os arquivos ficariam só neste PC.\n\nO atalho já foi criado?")) {
+  if (event.target.checked && !confirm("Só ligue se este PC tem OneDrive e você já rodou o comando do portal (Conexões → SharePoint) que liga a pasta Downloads\\Leitor de XML ao SharePoint.\n\nO comando já foi rodado?")) {
     event.target.checked = false;
     return;
   }
   await chrome.storage.local.set({ deliverToFolder: event.target.checked });
-  say(event.target.checked ? "Os ZIPs passam a ser salvos na pasta do SharePoint deste PC." : "Entrega na pasta desligada.");
-});
-
-$("localCopies").addEventListener("change", async (event) => {
-  await chrome.storage.local.set({ localCopies: event.target.checked, ...(event.target.checked ? {} : { localCopiesDone: [] }) });
-  say(event.target.checked ? "Os ZIPs para revisão serão guardados em Downloads\Leitor de XML - Revisão." : "Cópia para revisão desligada.");
-  if (event.target.checked) chrome.runtime.sendMessage({ type: "SAVE_LOCAL_COPIES" }).catch(() => {});
+  say(event.target.checked ? "Esta pasta agora envia os ZIPs ao SharePoint (via OneDrive)." : "Este PC volta a só guardar os ZIPs em Downloads.");
 });
 
 $("autoRequest").addEventListener("change", async (event) => {

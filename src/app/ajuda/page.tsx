@@ -28,7 +28,7 @@ const PROBLEMS: Array<[string, string]> = [
   ["Tela do Fisco Fácil falando em “IP” ou “bloqueio”", "Pare, feche o Fisco Fácil e espere 30 minutos. Avise o João."],
   ["Indicador girando há mais de 5 minutos", "Mande um print do popup (linha “Último passo”). Até 3 minutos ele se resolve sozinho."],
   ["Tarefa “Expirada” ou “Falha”", "Em Início, clique em “Pedir de novo” na etiqueta."],
-  ["Arquivo não chegou ao SharePoint", "Espere uns 20 minutos. Se não chegar, confira se o PC que entrega está ligado, com o Chrome aberto e o OneDrive sincronizando."],
+  ["Arquivo não chegou ao SharePoint", "Espere uns 20 minutos. Se não chegar, confira se o PC com OneDrive está ligado, com o Chrome aberto e o OneDrive sincronizando."],
 ];
 
 export default async function AjudaPage() {
@@ -89,7 +89,7 @@ export default async function AjudaPage() {
 
         <Topic title="Onde ficam os arquivos">
           <p>No SharePoint, em <code>Tecnologia\Leitor de XML - Zips</code>: <code>CNPJ - Razão Social \ AAAA-MM \ arquivo.zip</code>. Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link> você vê quantos já foram entregues.</p>
-          <p className="mt-2 text-black/60">Quem opera não precisa de OneDrive: o ZIP vai primeiro para o portal. Uma cópia fica em <code>DownloadsLeitor de XML - Revisão</code> no PC de quem revisa, e em até uns 20 minutos o PC que entrega (ligado, com o Chrome aberto) leva outra para o SharePoint. Também dá para baixar o ZIP na tela da empresa, em <strong>Baixar ZIP</strong>.</p>
+          <p className="mt-2 text-black/60">Em todo PC com a extensão conectada, os ZIPs ficam na pasta <code>Downloads\Leitor de XML</code>, para revisar. Nos PCs com OneDrive configurado (veja “PC com OneDrive”), essa mesma pasta sobe sozinha para o SharePoint. Também dá para baixar o ZIP na tela da empresa, em <strong>Baixar ZIP</strong>.</p>
         </Topic>
 
         <Topic title="Algo deu errado" tag="problemas comuns" open>
@@ -122,24 +122,21 @@ export default async function AjudaPage() {
           <p className="mt-2 text-black/60">Quando o João avisar de uma versão nova: baixe o ZIP de novo, extraia por cima de <code>C:\LeitorXML</code> (substituindo os arquivos) e, em <code>chrome://extensions</code>, clique no botão de recarregar (seta circular) da extensão.</p>
         </Topic>
 
-        <Topic title="Preparar o PC de quem opera" tag="depois de instalar a extensão">
-          <p className="mb-2">Serve para qualquer PC, <strong>com ou sem OneDrive</strong>.</p>
+        <Topic title="Preparar o PC" tag="depois de instalar a extensão">
           <Steps>
             <li>Em <Link href="/conexoes" className="underline">Conexões</Link>, clique em <strong>Conectar esta extensão</strong>.</li>
-            <li>No popup da extensão, ligue <strong>Acompanhamento automático</strong>.</li>
-            <li>Ainda no popup, abra <strong>Configurações avançadas</strong> e ligue <strong>Guardar uma cópia dos ZIPs para revisão</strong>. Os arquivos passam a aparecer em <code>DownloadsLeitor de XML - Revisão</code>.</li>
+            <li>No popup da extensão, ligue <strong>Acompanhamento automático</strong> (só no PC de quem opera).</li>
             <li>Nas configurações de energia do Windows, deixe o PC <strong>nunca suspender</strong> na tomada.</li>
           </Steps>
-          <p className="mt-3 text-amber-800">Em PC sem OneDrive, deixe <strong>desligado</strong> “Salvar os ZIPs na pasta do SharePoint”. Ligado sem o atalho da pasta, o portal marcaria o arquivo como entregue sem ele ter ido para o SharePoint. A pasta de revisão é outra coisa e pode ficar ligada.</p>
+          <p className="mt-3 text-black/60">Pronto. Os ZIPs passam a aparecer sozinhos em <code>Downloads\Leitor de XML</code>.</p>
         </Topic>
 
-        <Topic title="Preparar o PC que entrega no SharePoint" tag="só um PC, com OneDrive">
-          <p className="mb-2">Este PC leva os ZIPs de todos os outros PCs até o SharePoint, sem ninguém precisar fazer nada. Basta ele estar ligado, com o Chrome aberto e o OneDrive sincronizando.</p>
+        <Topic title="PC com OneDrive" tag="opcional, só um PC">
+          <p className="mb-2">Em um PC com OneDrive, a pasta <code>Downloads\Leitor de XML</code> pode ser ligada ao SharePoint: tudo o que cai nela sobe sozinho, inclusive os ZIPs baixados por outros PCs. Basta esse PC ficar ligado, com o Chrome aberto e o OneDrive sincronizando.</p>
           <Steps>
-            <li>Instale e conecte a extensão (passos acima).</li>
             <li>Sincronize a biblioteca “arquivos” do SharePoint no OneDrive deste PC.</li>
-            <li>Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link>, copie o comando e cole no PowerShell (cria o atalho da pasta).</li>
-            <li>No popup da extensão, ligue <strong>Salvar os ZIPs na pasta do SharePoint</strong> (Configurações avançadas).</li>
+            <li>Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link>, copie o comando e cole no PowerShell.</li>
+            <li>No popup da extensão, em Configurações avançadas, ligue <strong>Este PC tem OneDrive: enviar os ZIPs ao SharePoint</strong>.</li>
           </Steps>
         </Topic>
 
