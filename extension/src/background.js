@@ -335,6 +335,44 @@ async function deliverPending() {
   return { delivered, failed, skipped: false };
 }
 
+// ---------- Cópia para revisão (pasta Downloads deste PC) ----------
+// Quem revisa precisa ter os ZIPs à mão neste PC, mesmo sem OneDrive. Diferente da entrega: NÃO marca nada no portal
+// (o SharePoint continua sendo entregue pelo PC que tem o atalho) e usa outra pasta, fora do atalho do SharePoint.
+const REVIEW_ROOT_FOLDER = "Leitor de XML - Revisão";
+let savingCopies = false;
+
+async function saveLocalCopies() {
+  if (savingCopies) return { saved: 0, failed: 0, skipped: true };
+  const { localCopies = false, localCopiesDone = [] } = await chrome.storage.local.get(["localCopies", "localCopiesDone"]);
+  if (!localCopies) return { saved: 0, failed: 0, skipped: true };
+  savingCopies = true;
+  let saved = 0;
+  let failed = 0;
+  try {
+    const { items } = await (await apiFetch("/api/leitorxml/extensao/acompanhamento/revisao")).json();
+    const done = new Set(localCopiesDone);
+    for (const item of items.filter((candidate) => !done.has(candidate.taskId)).slice(0, 25)) {
+      try {
+        const { url } = await (await apiFetch(`/api/leitorxml/extensao/tarefas/${item.taskId}/arquivo`)).json();
+        const downloadId = await chrome.downloads.download({ url, filename: `${REVIEW_ROOT_FOLDER}/${item.path}`, conflictAction: "overwrite", saveAs: false });
+        const outcome = await waitDownload(downloadId);
+        if (outcome !== "complete") throw new Error(`download ${outcome}`);
+        chrome.downloads.erase({ id: downloadId }).catch(() => {});
+        done.add(item.taskId);
+        saved += 1;
+      } catch {
+        failed += 1; // tenta de novo na próxima rodada
+      }
+    }
+    const current = new Set(items.map((item) => item.taskId));
+    await chrome.storage.local.set({ localCopiesDone: [...done].filter((id) => current.has(id)) });
+  } finally {
+    savingCopies = false;
+  }
+  await chrome.storage.local.set({ lastLocalCopies: { at: Date.now(), saved, failed } });
+  return { saved, failed, skipped: false };
+}
+
 // ---------- Acompanhamento automático ----------
 // Pensado pra quem opera sem saber de tecnologia: com o Chrome aberto e o Fisco Fácil logado, a cada ~20 min a
 // extensão pergunta ao backend se há algo a baixar/conferir e, havendo, roda sozinha a mesma esteira do botão
@@ -362,6 +400,7 @@ async function setAutoStatus(status) {
 
 async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
   await deliverPending().catch(() => {}); // ZIPs que chegaram enquanto este PC estava desligado / fechado
+  await saveLocalCopies().catch(() => {});
   const { autoTrackEnabled = true, robotMode = false, autoRequestEnabled = false, autoPauseUntil = 0 } = await chrome.storage.local.get(["autoTrackEnabled", "robotMode", "autoRequestEnabled", "autoPauseUntil"]);
   if (!autoTrackEnabled) return setAutoStatus({ state: "DESLIGADO" });
   const now = new Date();
@@ -1017,6 +1056,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "SAVE_LOCAL_COPIES": {
+          sendResponse(await saveLocalCopies());
+          break;
+        }
         case "START_TRACKING": {
           sendResponse(await startTrackingBelt({ tabId: sender.tab?.id }));
           break;
@@ -1079,7 +1122,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
           const captured = await captureDownloadViaCdp(sender.tab.id, message.x, message.y, message.taskId);
           sendResponse({ ok: true, result: captured });
-          if (captured.ok) deliverPending().catch(() => {}); // já salva o recém-baixado na pasta, sem esperar a próxima rodada
+          if (captured.ok) { deliverPending().catch(() => {}); saveLocalCopies().catch(() => {}); } // já salva o recém-baixado na pasta, sem esperar a próxima rodada
           break;
         }
         case "CHAIN_NEXT_TASK": {

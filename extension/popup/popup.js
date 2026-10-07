@@ -96,7 +96,7 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
 
 let inputsLoaded = false;
 async function load() {
-  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder"]);
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder", "localCopies"]);
   const apiBaseUrl = local.apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml";
   // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
   if (!inputsLoaded) {
@@ -105,6 +105,7 @@ async function load() {
     $("robotMode").checked = Boolean(local.robotMode);
     $("autoRequest").checked = Boolean(local.autoRequestEnabled);
     $("deliverToFolder").checked = Boolean(local.deliverToFolder);
+    $("localCopies").checked = Boolean(local.localCopies);
     inputsLoaded = true;
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
@@ -130,6 +131,12 @@ $("deliverToFolder").addEventListener("change", async (event) => {
   }
   await chrome.storage.local.set({ deliverToFolder: event.target.checked });
   say(event.target.checked ? "Os ZIPs passam a ser salvos na pasta do SharePoint deste PC." : "Entrega na pasta desligada.");
+});
+
+$("localCopies").addEventListener("change", async (event) => {
+  await chrome.storage.local.set({ localCopies: event.target.checked, ...(event.target.checked ? {} : { localCopiesDone: [] }) });
+  say(event.target.checked ? "Os ZIPs para revisão serão guardados em Downloads\Leitor de XML - Revisão." : "Cópia para revisão desligada.");
+  if (event.target.checked) chrome.runtime.sendMessage({ type: "SAVE_LOCAL_COPIES" }).catch(() => {});
 });
 
 $("autoRequest").addEventListener("change", async (event) => {

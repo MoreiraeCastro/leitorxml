@@ -6,7 +6,7 @@ import { DELIVERY_SELECT, toDeliveryItems } from "@/lib/leitorxml/entregas";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** ZIPs já validados e em staging que ainda não foram entregues na pasta do SharePoint — a extensão salva cada um no PC (atalho do OneDrive) e marca como entregue. */
+/** ZIPs que aguardam revisão — a extensão guarda uma cópia na pasta Downloads do PC de quem revisa. Não depende de já ter sido entregue ao SharePoint. */
 export async function GET(request: Request) {
   const db = createAdminClient();
   const identity = await resolveExtensionToken(db, request.headers.get("authorization"));
@@ -15,15 +15,13 @@ export async function GET(request: Request) {
     const { data, error } = await db
       .from("xml_collection_tasks")
       .select(DELIVERY_SELECT)
-      .in("status", ["DISPONIVEL_REVISAO", "REVISADO"])
-      .is("sharepoint_path", null)
-      .is("sharepoint_item_id", null)
+      .eq("status", "DISPONIVEL_REVISAO")
       .not("storage_path_zip", "is", null)
       .order("updated_at", { ascending: true })
-      .limit(25);
+      .limit(500);
     if (error) throw error;
     return NextResponse.json({ items: toDeliveryItems(data ?? []) });
   } catch {
-    return NextResponse.json({ error: "Não foi possível listar as entregas pendentes." }, { status: 500 });
+    return NextResponse.json({ error: "Não foi possível listar os arquivos para revisão." }, { status: 500 });
   }
 }
