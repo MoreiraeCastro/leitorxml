@@ -24,7 +24,8 @@ export async function GET() {
   const root = path.join(process.cwd(), "extension");
   const files = await collect(root);
   if (!files.some((file) => file.name === "manifest.json")) return NextResponse.json({ error: "Extensão indisponível neste servidor." }, { status: 500 });
-  const zip = buildStoredZip(files);
+  // Tudo dentro de uma pasta "LeitorXML": extrair em C:\ já cria C:\LeitorXML, sem arquivos soltos.
+  const zip = buildStoredZip(files.map((file) => ({ ...file, name: `LeitorXML/${file.name}` })));
   return new NextResponse(new Uint8Array(zip), {
     headers: {
       "Content-Type": "application/zip",

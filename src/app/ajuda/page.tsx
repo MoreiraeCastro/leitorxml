@@ -112,14 +112,14 @@ export default async function AjudaPage() {
           <Steps>
             <li>No Chrome deste computador, entre no portal e abra <Link href="/conexoes" className="underline">Conexões</Link>. Clique em <strong>Baixar a extensão (ZIP)</strong>.</li>
             <li>Abra a pasta Downloads, clique com o botão direito em <code>leitor-de-xml-extensao.zip</code> e escolha <strong>Extrair tudo…</strong>.</li>
-            <li>Na janela, apague o caminho que aparece e digite <code>C:\LeitorXML</code>. Clique em <strong>Extrair</strong>. Essa pasta precisa ficar sempre ali: não apague nem mude de lugar.</li>
+            <li>Na janela, apague o caminho que aparece e digite só <code>C:\</code>. Clique em <strong>Extrair</strong>. Isso cria a pasta <code>C:\LeitorXML</code>, que precisa ficar sempre ali: não apague nem mude de lugar. Confira no Explorer: dentro dela devem estar <code>manifest.json</code>, <code>popup</code> e <code>src</code>.</li>
             <li>No Chrome, digite <code>chrome://extensions</code> na barra de endereço e tecle Enter.</li>
             <li>Ligue <strong>Modo do desenvolvedor</strong> (canto superior direito).</li>
             <li>Clique em <strong>Carregar sem compactação</strong> e escolha a pasta <code>C:\LeitorXML</code> (a que tem o arquivo <code>manifest.json</code> dentro). A extensão “Leitor de XML — Fisco Fácil” aparece na lista, ligada.</li>
             <li>Clique no ícone de quebra-cabeça do Chrome (canto superior direito) e no <strong>alfinete</strong> ao lado da extensão, para o ícone ficar sempre visível.</li>
           </Steps>
           <p className="mt-3 text-black/60">Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”. Feche o aviso ou clique em <strong>Cancelar</strong>, sem desativar a extensão.</p>
-          <p className="mt-2 text-black/60">Quando o João avisar de uma versão nova: baixe o ZIP de novo, extraia por cima de <code>C:\LeitorXML</code> (substituindo os arquivos) e, em <code>chrome://extensions</code>, clique no botão de recarregar (seta circular) da extensão.</p>
+          <p className="mt-2 text-black/60">Quando o João avisar de uma versão nova: baixe o ZIP de novo, extraia de novo em <code>C:\</code> (substituindo os arquivos da pasta <code>LeitorXML</code>) e, em <code>chrome://extensions</code>, clique no botão de recarregar (seta circular) da extensão.</p>
         </Topic>
 
         <Topic title="Preparar o PC" tag="depois de instalar a extensão">
