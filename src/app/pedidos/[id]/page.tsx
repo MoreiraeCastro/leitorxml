@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,7 +42,8 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
 
   return (
     <Shell session={session}>
-      <div className="flex items-start justify-between">
+      <Link href="/painel" className="text-sm text-black/50 hover:text-black">← Início</Link>
+      <div className="mt-2 flex items-start justify-between">
         <div>
           <h1 className="text-lg font-semibold text-[#082240]">{establishment?.razao_social}</h1>
           <p className="text-sm text-black/60">{establishment?.cnpj} · {documentLabel(task.tipo_documento)} · {roleLabel(task.papel)} · {competenciaLabel(task.competencia_ano, task.competencia_mes)}</p>

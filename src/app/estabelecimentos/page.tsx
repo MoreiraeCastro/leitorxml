@@ -3,7 +3,7 @@ import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Shell } from "@/components/shell";
 
-export const metadata = { title: "Estabelecimentos" };
+export const metadata = { title: "Empresas" };
 
 export default async function EstabelecimentosPage() {
   const session = await requireOfficeSessionOrRedirect();
@@ -15,12 +15,12 @@ export default async function EstabelecimentosPage() {
   return (
     <Shell session={session}>
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-[#082240]">Estabelecimentos</h1>
-        <Link href="/estabelecimentos/novo" className="rounded bg-[#082240] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#123a5d]">Novo estabelecimento</Link>
+        <h1 className="text-xl font-semibold text-[#082240]">Empresas</h1>
+        <Link href="/estabelecimentos/novo" className="rounded bg-[#082240] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#123a5d]">Nova empresa</Link>
       </div>
 
       {error && <p className="mt-4 text-sm text-red-700">Não foi possível carregar os estabelecimentos.</p>}
-      {!error && !establishments?.length && <p className="mt-8 text-sm text-black/60">Nenhum estabelecimento cadastrado ainda.</p>}
+      {!error && !establishments?.length && <p className="mt-8 text-sm text-black/60">Nenhuma empresa cadastrada ainda.</p>}
 
       {!!establishments?.length && (
         <div className="mt-6 overflow-x-auto rounded border border-black/10 bg-white">

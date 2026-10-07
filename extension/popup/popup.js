@@ -164,7 +164,7 @@ $("startSweep").addEventListener("click", async () => {
 
 $("connectPortal").addEventListener("click", async () => {
   const { apiBaseUrl } = await chrome.storage.local.get("apiBaseUrl");
-  await chrome.tabs.create({ url: `${(apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml").replace(/\/$/, "")}/extensao` });
+  await chrome.tabs.create({ url: `${(apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml").replace(/\/$/, "")}/conexoes` });
 });
 
 $("workNow").addEventListener("click", async () => {

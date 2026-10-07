@@ -17,7 +17,7 @@ export default async function NovaExtracaoPage() {
   return (
     <Shell session={session}>
       <h1 className="text-lg font-semibold text-[#082240]">Nova extração</h1>
-      <p className="mt-1 text-sm text-black/60">Cria as 3 tarefas (NF-e Emitente, NF-e Destinatário, NFC-e Emitente) para cada estabelecimento marcado, na competência escolhida. Estabelecimentos inativos ou com situação &quot;Baixada&quot; são ignorados mesmo se marcados.</p>
+      <p className="mt-1 text-sm text-black/60">Escolha as empresas e o mês. Cada uma ganha as 3 tarefas. Inativas e baixadas são ignoradas.</p>
 
       {error && <p className="mt-4 text-sm text-red-700">Não foi possível carregar os estabelecimentos.</p>}
 
