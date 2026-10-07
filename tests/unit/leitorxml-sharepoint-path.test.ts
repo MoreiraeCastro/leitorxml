@@ -25,3 +25,11 @@ describe("buildSharePointPath", () => {
     expect(safeSegment("Empresa S.A. ")).toBe("Empresa S.A");
   });
 });
+
+describe("deliveryPath", () => {
+  it("junta empresa / mês / arquivo com barras, igual ao caminho do envio direto", async () => {
+    const { deliveryPath } = await import("@/lib/leitorxml/sharepoint-path");
+    expect(deliveryPath({ cnpj: "03948385000101", razaoSocial: "TUPANZINHO HOMEOPATIA LTDA", folderPath: null, tipo: "NFCE", papel: "EMITENTE", ano: 2026, mes: 8 }))
+      .toBe("03948385000101 - TUPANZINHO HOMEOPATIA LTDA/2026-08/03948385000101_NFCE_EMITENTE_2026-08.zip");
+  });
+});

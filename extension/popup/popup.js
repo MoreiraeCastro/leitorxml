@@ -96,7 +96,7 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
 
 let inputsLoaded = false;
 async function load() {
-  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled"]);
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder"]);
   const apiBaseUrl = local.apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml";
   // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
   if (!inputsLoaded) {
@@ -104,6 +104,7 @@ async function load() {
     tokenInput.value = local.apiToken ?? "";
     $("robotMode").checked = Boolean(local.robotMode);
     $("autoRequest").checked = Boolean(local.autoRequestEnabled);
+    $("deliverToFolder").checked = Boolean(local.deliverToFolder);
     inputsLoaded = true;
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
@@ -120,6 +121,15 @@ $("save").addEventListener("click", async () => {
 $("robotMode").addEventListener("change", async (event) => {
   await chrome.storage.local.set({ robotMode: event.target.checked });
   say(event.target.checked ? "Modo PC robô ligado: abre o Fisco Fácil e trabalha sozinho." : "Modo PC robô desligado.");
+});
+
+$("deliverToFolder").addEventListener("change", async (event) => {
+  if (event.target.checked && !confirm("Antes de ligar: o atalho Downloads\\Leitor de XML precisa apontar para a pasta sincronizada do SharePoint. Sem ele, os arquivos ficariam só neste PC.\n\nO atalho já foi criado?")) {
+    event.target.checked = false;
+    return;
+  }
+  await chrome.storage.local.set({ deliverToFolder: event.target.checked });
+  say(event.target.checked ? "Os ZIPs passam a ser salvos na pasta do SharePoint deste PC." : "Entrega na pasta desligada.");
 });
 
 $("autoRequest").addEventListener("change", async (event) => {

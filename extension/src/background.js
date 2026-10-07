@@ -276,6 +276,65 @@ async function endBelt(summary) {
   }
 }
 
+// ---------- Entrega dos ZIPs na pasta do SharePoint deste PC ----------
+// Depois de baixar do Fisco Fácil e validar no portal, cada ZIP é salvo em Downloads\\Leitor de XML\\<empresa>\\<mês>\\
+// por esta extensão. Essa pasta deve ser um ATALHO do Windows (junção) para a pasta sincronizada do SharePoint — o
+// OneDrive sobe pra nuvem. Sem credenciais no PC: o arquivo vem por um link temporário (60 s) do portal.
+// Só roda se o interruptor "Salvar na pasta" estiver ligado neste computador: sem o atalho, o arquivo cairia numa pasta
+// comum e o portal marcaria como entregue sem estar no SharePoint.
+let delivering = false;
+const DELIVERY_ROOT_FOLDER = "Leitor de XML";
+
+function waitDownload(downloadId, timeoutMs = 90000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => finish("timeout"), timeoutMs);
+    const onChanged = (delta) => {
+      if (delta.id !== downloadId || !delta.state) return;
+      if (delta.state.current === "complete") finish("complete");
+      if (delta.state.current === "interrupted") finish("interrupted");
+    };
+    const finish = (result) => {
+      clearTimeout(timer);
+      chrome.downloads.onChanged.removeListener(onChanged);
+      resolve(result);
+    };
+    chrome.downloads.onChanged.addListener(onChanged);
+  });
+}
+
+async function deliverPending() {
+  if (delivering) return { delivered: 0, failed: 0, skipped: true };
+  const { deliverToFolder = false } = await chrome.storage.local.get("deliverToFolder");
+  if (!deliverToFolder) return { delivered: 0, failed: 0, skipped: true };
+  delivering = true;
+  let delivered = 0;
+  let failed = 0;
+  try {
+    const { items } = await (await apiFetch("/api/leitorxml/extensao/acompanhamento/entregas")).json();
+    for (const item of items) {
+      try {
+        const { url } = await (await apiFetch(`/api/leitorxml/extensao/tarefas/${item.taskId}/arquivo`)).json();
+        const downloadId = await chrome.downloads.download({ url, filename: `${DELIVERY_ROOT_FOLDER}/${item.path}`, conflictAction: "overwrite", saveAs: false });
+        const outcome = await waitDownload(downloadId);
+        if (outcome !== "complete") throw new Error(`download ${outcome}`);
+        await apiFetch(`/api/leitorxml/extensao/tarefas/${item.taskId}/entregue`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: item.path }),
+        });
+        chrome.downloads.erase({ id: downloadId }).catch(() => {}); // tira do histórico de transferências (o arquivo fica)
+        delivered += 1;
+      } catch {
+        failed += 1; // tenta de novo na próxima rodada
+      }
+    }
+  } finally {
+    delivering = false;
+  }
+  await chrome.storage.local.set({ lastDelivery: { at: Date.now(), delivered, failed } });
+  return { delivered, failed, skipped: false };
+}
+
 // ---------- Acompanhamento automático ----------
 // Pensado pra quem opera sem saber de tecnologia: com o Chrome aberto e o Fisco Fácil logado, a cada ~20 min a
 // extensão pergunta ao backend se há algo a baixar/conferir e, havendo, roda sozinha a mesma esteira do botão
@@ -302,6 +361,7 @@ async function setAutoStatus(status) {
 }
 
 async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
+  await deliverPending().catch(() => {}); // ZIPs que chegaram enquanto este PC estava desligado / fechado
   const { autoTrackEnabled = true, robotMode = false, autoRequestEnabled = false, autoPauseUntil = 0 } = await chrome.storage.local.get(["autoTrackEnabled", "robotMode", "autoRequestEnabled", "autoPauseUntil"]);
   if (!autoTrackEnabled) return setAutoStatus({ state: "DESLIGADO" });
   const now = new Date();
@@ -1017,7 +1077,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "CAPTURE_DOWNLOAD_CLICK": {
           if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
-          sendResponse({ ok: true, result: await captureDownloadViaCdp(sender.tab.id, message.x, message.y, message.taskId) });
+          const captured = await captureDownloadViaCdp(sender.tab.id, message.x, message.y, message.taskId);
+          sendResponse({ ok: true, result: captured });
+          if (captured.ok) deliverPending().catch(() => {}); // já salva o recém-baixado na pasta, sem esperar a próxima rodada
           break;
         }
         case "CHAIN_NEXT_TASK": {

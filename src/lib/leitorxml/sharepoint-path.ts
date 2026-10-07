@@ -15,3 +15,9 @@ export function buildSharePointPath(target: SharePointTarget) {
   const filename = safeSegment(`${target.cnpj}_${target.tipo}_${target.papel}_${competencia}`) + ".zip";
   return { directory: [...companyFolder, competencia], filename };
 }
+
+/** Caminho relativo completo, com "/" (empresa/AAAA-MM/arquivo.zip) — o que a extensão salva no PC e o que fica registrado na tarefa. */
+export function deliveryPath(target: SharePointTarget) {
+  const { directory, filename } = buildSharePointPath(target);
+  return [...directory, filename].join("/");
+}
