@@ -5,7 +5,8 @@ import { Shell } from "@/components/shell";
 import { TodaySummary, loadTodayCounts } from "@/components/today-summary";
 import { withBasePath } from "@/lib/base-path";
 import { previousClosedCompetencia } from "@/lib/leitorxml/tasks";
-import { STATUS_LABELS, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
+import { STATUS_LABELS, canRequestAgain, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
+import { pedirDeNovo } from "../pedidos/actions";
 import type { XmlCollectionStatus } from "@/lib/leitorxml/types";
 
 export const metadata = { title: "Painel mensal" };
@@ -96,6 +97,11 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
                     <td className="px-4 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE_CLASS[statusTone(row.status)]}`}>{STATUS_LABELS[row.status]}</span>
                       {row.erro_mensagem && <div className="mt-1 text-xs text-red-700">{row.erro_mensagem}</div>}
+                      {canRequestAgain(row.status) && (
+                        <form action={pedirDeNovo.bind(null, row.id)} className="mt-1">
+                          <button type="submit" className="rounded border border-[#082240]/30 px-2 py-0.5 text-xs font-medium text-[#082240] hover:bg-[#082240]/5">Pedir de novo</button>
+                        </form>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-black/60">{new Date(row.updated_at).toLocaleString("pt-BR")}</td>
                   </tr>

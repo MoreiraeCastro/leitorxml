@@ -31,7 +31,7 @@ const PROBLEMS: Array<[string, string]> = [
   ["Popup diz “Algo deu errado”", "Leia a mensagem, clique em “Trabalhar agora” de novo. Se repetir, tire um print do popup e mande para o João."],
   ["A tela do Fisco Fácil mostra um texto sobre “endereços IP” ou “mensagem de bloqueio”", "Pare (botão “Parar depois da etapa atual”), feche o Fisco Fácil e espere 30 minutos. Avise o João. Não fique tentando de novo."],
   ["Indicador girando por mais de 5 minutos", "O sistema desiste sozinho depois de uns 3 minutos e segue para a próxima empresa. Se passar de 5, tire um print do popup (com a linha “Último passo”) e mande para o João."],
-  ["Uma tarefa aparece como “Expirada”", "O arquivo passou dos 7 dias no Fisco Fácil e precisa ser pedido de novo. Avise o João."],
+  ["Uma tarefa aparece como “Expirada” (ou com falha)", "O pedido venceu no Fisco Fácil (passou dos 7 dias) ou não deu certo. No Painel, clique em “Pedir de novo” na linha da empresa, ou abra o pedido e use o mesmo botão. Ela volta para a fila e, na próxima vez que a extensão pedir (“Trabalhar agora”), será a primeira."],
   ["O arquivo não apareceu no SharePoint", "Confirme que o computador está ligado, que o ícone do OneDrive (nuvem) não está parado e que o Chrome ficou aberto. Se mesmo assim não chegar, avise o João."],
 ];
 
@@ -96,7 +96,7 @@ export default async function GuiaPage() {
         <p className="mt-4 text-sm font-medium text-black/80">Depois de pedir</p>
         <ul className="mt-2 list-disc space-y-1 pl-6 text-sm leading-relaxed text-black/70">
           <li>O Fisco Fácil pode levar <strong>até 5 dias</strong> para processar (perto do dia 11 costuma demorar mais). Não é preciso fazer nada: a extensão confere sozinha e baixa quando ficar “Processada”.</li>
-          <li>Depois de pronto, o arquivo fica disponível por <strong>7 dias</strong>. Passando disso vira <strong>“Expirada”</strong> e precisa ser pedido de novo, por isso é importante deixar o Chrome aberto nesses dias.</li>
+          <li>Depois de pronto, o arquivo fica disponível por <strong>7 dias</strong>. Passando disso vira <strong>“Expirada”</strong> e precisa ser pedido de novo (botão <strong>“Pedir de novo”</strong> no Painel), por isso é importante deixar o Chrome aberto nesses dias.</li>
         </ul>
         <Note>Se o João ligar a opção <em>“Solicitar automaticamente a partir do dia 10”</em> (Configurações avançadas da extensão), a extensão faz esse passo sozinha, sem ninguém clicar em “Trabalhar agora”.</Note>
       </Section>

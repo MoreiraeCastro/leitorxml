@@ -2,9 +2,9 @@ import { notFound } from "next/navigation";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Shell } from "@/components/shell";
-import { STATUS_LABELS, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
+import { STATUS_LABELS, canRequestAgain, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
 import type { XmlCollectionStatus } from "@/lib/leitorxml/types";
-import { marcarRevisado } from "../actions";
+import { marcarRevisado, pedirDeNovo } from "../actions";
 import { enviarTarefaSharePoint } from "@/app/sharepoint/actions";
 
 export const metadata = { title: "Detalhe do pedido" };
@@ -36,6 +36,7 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
   const { data: files } = await db.from("xml_collection_files").select("*").eq("task_id", id).order("created_at", { ascending: false });
 
   const revisarAction = marcarRevisado.bind(null, id);
+  const pedirDeNovoAction = pedirDeNovo.bind(null, id);
   const enviarAction = enviarTarefaSharePoint.bind(null, id);
 
   return (
@@ -49,6 +50,13 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
       </div>
 
       {task.erro_mensagem && <p className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{task.erro_mensagem}</p>}
+
+      {canRequestAgain(task.status) && (
+        <form action={pedirDeNovoAction} className="mt-4 rounded border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">Este pedido {task.status === "EXPIRADA" ? "venceu no Fisco Fácil (passou dos 7 dias)" : "não deu certo"}. Você pode devolvê-lo à fila: na próxima vez que a extensão pedir, ele será o primeiro.</p>
+          <button type="submit" className="mt-3 rounded bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Pedir de novo</button>
+        </form>
+      )}
 
       {task.status === "DISPONIVEL_REVISAO" && (
         <form action={revisarAction} className="mt-4">

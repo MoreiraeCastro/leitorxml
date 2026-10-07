@@ -52,3 +52,9 @@ export function roleLabel(papel: keyof typeof ROLE_LABELS) { return ROLE_LABELS[
 
 const MONTH_LABELS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 export function competenciaLabel(ano: number, mes: number) { return `${MONTH_LABELS[mes - 1]}/${ano}`; }
+
+/** Estados em que faz sentido "Pedir de novo": a solicitação venceu no Fisco Fácil ou não deu certo e precisa ser feita outra vez. */
+export const REQUEST_AGAIN_STATUSES = ["EXPIRADA", "FALHA", "AGUARDANDO_INTERVENCAO"] as const;
+export function canRequestAgain(status: string) {
+  return (REQUEST_AGAIN_STATUSES as readonly string[]).includes(status);
+}
