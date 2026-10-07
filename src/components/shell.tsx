@@ -8,6 +8,7 @@ const NAV = [
   { href: "/extracao/nova", label: "Nova extração" },
   { href: "/extensao", label: "Extensão" },
   { href: "/sharepoint", label: "SharePoint" },
+  { href: "/guia", label: "Guia" },
 ];
 
 export function Shell({ session, children }: { session: OfficeSession; children: React.ReactNode }) {
