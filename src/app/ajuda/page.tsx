@@ -107,10 +107,23 @@ export default async function AjudaPage() {
           <p className="mt-3 text-black/60">Ao pedir ajuda, mande sempre um print do popup da extensão.</p>
         </Topic>
 
-        <Topic title="Preparar um computador" tag="uma vez por PC">
+        <Topic title="Instalar a extensão" tag="uma vez por PC">
           <Steps>
-            <li>Em <code>chrome://extensions</code>, a extensão “Leitor de XML” deve estar ligada.</li>
-            <li>Em <Link href="/conexoes" className="underline">Conexões</Link>, clique em <strong>Conectar esta extensão</strong>.</li>
+            <li>No Chrome deste computador, entre no portal e abra <Link href="/conexoes" className="underline">Conexões</Link>. Clique em <strong>Baixar a extensão (ZIP)</strong>.</li>
+            <li>Abra a pasta Downloads, clique com o botão direito em <code>leitor-de-xml-extensao.zip</code> e escolha <strong>Extrair tudo…</strong>.</li>
+            <li>Na janela, apague o caminho que aparece e digite <code>C:\LeitorXML</code>. Clique em <strong>Extrair</strong>. Essa pasta precisa ficar sempre ali: não apague nem mude de lugar.</li>
+            <li>No Chrome, digite <code>chrome://extensions</code> na barra de endereço e tecle Enter.</li>
+            <li>Ligue <strong>Modo do desenvolvedor</strong> (canto superior direito).</li>
+            <li>Clique em <strong>Carregar sem compactação</strong> e escolha a pasta <code>C:\LeitorXML</code> (a que tem o arquivo <code>manifest.json</code> dentro). A extensão “Leitor de XML — Fisco Fácil” aparece na lista, ligada.</li>
+            <li>Clique no ícone de quebra-cabeça do Chrome (canto superior direito) e no <strong>alfinete</strong> ao lado da extensão, para o ícone ficar sempre visível.</li>
+          </Steps>
+          <p className="mt-3 text-black/60">Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”. Feche o aviso ou clique em <strong>Cancelar</strong>, sem desativar a extensão.</p>
+          <p className="mt-2 text-black/60">Quando o João avisar de uma versão nova: baixe o ZIP de novo, extraia por cima de <code>C:\LeitorXML</code> (substituindo os arquivos) e, em <code>chrome://extensions</code>, clique no botão de recarregar (seta circular) da extensão.</p>
+        </Topic>
+
+        <Topic title="Preparar um computador" tag="uma vez por PC, depois de instalar">
+          <Steps>
+            <li>Em <Link href="/conexoes" className="underline">Conexões</Link>, clique em <strong>Conectar esta extensão</strong> (a extensão precisa estar instalada).</li>
             <li>Sincronize a biblioteca “arquivos” do SharePoint no OneDrive deste PC.</li>
             <li>Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link>, copie o comando e cole no PowerShell (cria o atalho da pasta).</li>
             <li>No popup da extensão, ligue <strong>Acompanhamento automático</strong> e, em Configurações avançadas, <strong>Salvar os ZIPs na pasta do SharePoint</strong>.</li>

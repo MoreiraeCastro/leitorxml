@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { requireOfficeDataClient } from "@/lib/auth/session";
+import { withBasePath } from "@/lib/base-path";
 import { ExtensionTokenGenerator } from "@/components/extension-token-generator";
 import { ExtensionPairing } from "@/components/extension-pairing";
 import { revogarToken } from "../extensao/actions";
@@ -14,6 +16,14 @@ export async function ExtensaoSection() {
 
   return (
     <div className="space-y-4">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-5 py-4">
+        <div>
+          <h2 className="font-medium text-[#082240]">Instalar em outro computador</h2>
+          <p className="text-sm text-black/60">Baixe a extensão e siga o passo a passo em <Link href="/ajuda" className="underline">Ajuda → Instalar a extensão</Link>.</p>
+        </div>
+        <a href={withBasePath("/api/leitorxml/extensao/pacote")} className="rounded-lg bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:opacity-90">Baixar a extensão (ZIP)</a>
+      </section>
+
       <ExtensionPairing />
 
       <details className="rounded-xl border border-black/10 bg-white">
