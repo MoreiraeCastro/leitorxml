@@ -3,7 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireOfficeSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SharePointError, disconnectSharePoint, pollDeviceLogin, sendPendingToSharePoint, sendTaskToSharePoint, setRootFolderFromLink, startDeviceLogin } from "@/lib/leitorxml/sharepoint";
+import { SharePointError, saveReferenceFolder, disconnectSharePoint, pollDeviceLogin, sendPendingToSharePoint, sendTaskToSharePoint, setRootFolderFromLink, startDeviceLogin } from "@/lib/leitorxml/sharepoint";
 
 export type SharePointActionState = { message: string | null; error: string | null; userCode?: string | null; verificationUri?: string | null };
 const idle: SharePointActionState = { message: null, error: null };
@@ -53,6 +53,21 @@ export async function definirPastaSharePoint(_prev: SharePointActionState, formD
     await audit(session.userId, "leitorxml_sharepoint_folder_set", { name: folder.name });
     revalidatePath("/sharepoint");
     return { ...idle, message: `Pasta de destino: ${folder.name}.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Salva só o link da pasta (referência da equipe) — não conecta na Microsoft. */
+export async function salvarLinkPasta(_prev: SharePointActionState, formData: FormData): Promise<SharePointActionState> {
+  const session = await requireOfficeSession();
+  const parsed = linkSchema.safeParse(formData.get("link"));
+  if (!parsed.success) return { ...idle, error: "Cole o link completo da pasta do SharePoint." };
+  try {
+    const folder = await saveReferenceFolder(createAdminClient(), parsed.data);
+    await audit(session.userId, "leitorxml_sharepoint_reference_folder_set", { name: folder.name });
+    revalidatePath("/sharepoint");
+    return { ...idle, message: `Link salvo: ${folder.name}.` };
   } catch (error) {
     return failure(error);
   }

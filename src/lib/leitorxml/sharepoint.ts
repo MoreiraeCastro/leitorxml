@@ -203,6 +203,22 @@ export async function setRootFolderFromLink(db: SupabaseClient, link: string) {
   return { name: item.name, webUrl: item.webUrl };
 }
 
+/** Guarda só o LINK da pasta, como referência da equipe (sem falar com a Microsoft) — a entrega pelo PC não precisa dele pra funcionar. */
+export async function saveReferenceFolder(db: SupabaseClient, link: string) {
+  let url: URL;
+  try {
+    url = new URL(link.trim());
+  } catch {
+    throw new SharePointError("Link inválido.");
+  }
+  if (url.protocol !== "https:" || !url.hostname.endsWith(".sharepoint.com")) throw new SharePointError("Cole o link de uma pasta do SharePoint (endereço terminado em .sharepoint.com).");
+  const idParam = url.searchParams.get("id");
+  const lastSegment = decodeURIComponent((idParam ?? url.pathname).split("/").filter(Boolean).pop() ?? "").trim();
+  const name = lastSegment && !/^[A-Za-z0-9_-]{30,}$/.test(lastSegment) ? lastSegment : "Pasta do SharePoint";
+  await saveRow(db, { root_web_url: url.toString(), root_name: name });
+  return { name, webUrl: url.toString() };
+}
+
 // ---------- envio ----------
 
 export { buildSharePointPath, safeSegment, type SharePointTarget } from "./sharepoint-path";

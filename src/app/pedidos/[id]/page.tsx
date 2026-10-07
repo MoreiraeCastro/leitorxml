@@ -107,7 +107,11 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
       <section className="mt-8">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">SharePoint</h2>
         <p className="mt-3 text-sm text-black/60">
-          {task.sharepoint_path ?? "Integração com o SharePoint ainda não está configurada (aguardando app registration no Azure AD). O arquivo fica retido em staging até essa etapa existir."}
+          {task.sharepoint_path
+            ? task.sharepoint_path.startsWith("local:")
+              ? `Entregue na pasta do SharePoint (pelo computador): ${task.sharepoint_path.replace(/^local:\s*/, "")}`
+              : task.sharepoint_path
+            : "Ainda não entregue na pasta do SharePoint. A extensão salva o arquivo assim que um computador configurado estiver com o Chrome aberto."}
         </p>
         {task.storage_path_zip && !task.sharepoint_item_id && (
           <form action={enviarAction} className="mt-3"><button type="submit" className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Enviar ao SharePoint agora</button></form>
