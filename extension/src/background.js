@@ -432,22 +432,39 @@ async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
 }
 
 /**
- * O botão único "Trabalhar agora": decide sozinho o que fazer. Primeiro baixa/confere o que já foi pedido; se não
- * há isso e há tarefas ainda não pedidas, pede confirmação (cria pedidos REAIS) e só então começa a esteira de pedidos.
+ * O botão único "Trabalhar agora": faz o ciclo inteiro num clique. Primeiro baixa/confere o que já foi pedido e,
+ * na sequência, pede as tarefas ainda não pedidas. Pedir cria solicitações REAIS, então o popup pergunta uma vez,
+ * ANTES de começar (`decided`/`request`): quem disser não fica só com a conferência.
  */
-async function workNow({ tabId, confirmRequest = false }) {
+async function workNow({ tabId, decided = false, request = false }) {
   if ((await getActiveRun()) || (await getBelt())?.active) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO" };
   const { apiToken } = await getSettings();
   if (!apiToken) return { ok: false, error: "SEM_TOKEN_CONFIGURADO" };
   const summary = await (await apiFetch(`/api/leitorxml/extensao/acompanhamento/resumo?staleHours=${AUTO_TRACK_STALE_HOURS}`)).json();
-  const trackWork = summary.paraBaixar + summary.aConferir > 0;
+  const trackCount = summary.paraBaixar + summary.aConferir;
+  const trackWork = trackCount > 0;
   const requestWork = (summary.agendadas ?? 0) > 0;
   if (!trackWork && !requestWork) return { ok: true, nothing: true, summary };
-  if (!trackWork && !confirmRequest) return { ok: true, needsConfirm: { agendadas: summary.agendadas }, summary };
+  if (requestWork && !decided) return { ok: true, needsConfirm: { agendadas: summary.agendadas, conferir: trackCount }, summary };
+  const thenRequest = requestWork && request;
+  if (!trackWork && !thenRequest) return { ok: true, nothing: true, summary };
   // Quem clicou quer trabalhar: sem aba do Fisco Fácil, abre uma (o Chrome mostra a escolha do certificado).
   const workTabId = tabId ?? (await findWorkTabId()) ?? (await openWorkTab());
-  const outcome = trackWork ? await startTrackingBelt({ tabId: workTabId, onlyDue: true }) : await startRequestBelt({ tabId: workTabId });
-  return { ...outcome, started: trackWork ? "TRACK" : "REQUEST", summary };
+  const outcome = trackWork ? await startTrackingBelt({ tabId: workTabId, onlyDue: true, thenRequest }) : await startRequestBelt({ tabId: workTabId });
+  return { ...outcome, started: trackWork ? "TRACK" : "REQUEST", thenRequest, summary };
+}
+
+/**
+ * Fim normal da esteira de conferência. Se ela veio do "Trabalhar agora" com pedidos confirmados (`thenRequest`),
+ * emenda a esteira de pedidos na mesma aba. Devolve true se emendou (quem chamou não deve mandar a aba pra Home).
+ */
+async function finishTrackingBelt(summary, tabId) {
+  const belt = await getBelt();
+  await endBelt(summary);
+  if (!belt?.thenRequest || belt.stopRequested) return false;
+  await clearActiveRun();
+  const outcome = await startRequestBelt({ tabId, trackSummary: summary });
+  return Boolean(outcome.ok && outcome.run);
 }
 
 /** Guarda o token entregue pelo portal (conexão com um clique). Só aceita de uma página do portal conhecido. */
@@ -472,25 +489,28 @@ async function openWorkTab() {
 }
 
 /** Começa a esteira de solicitações (botão do popup ou automático). */
-async function startRequestBelt({ tabId, auto = false, force = false }) {
+async function startRequestBelt({ tabId, auto = false, force = false, trackSummary = null }) {
   const existing = await getActiveRun();
   if (existing && !force) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing };
   await setBelt({ kind: "REQUEST", active: true, auto, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
-  await chrome.storage.session.remove("lastSweepError");
+  if (!trackSummary) await chrome.storage.session.remove("lastSweepError");
   const run = await claimNextTaskAndPrepare(1, null, tabId ?? null);
-  if (!run) await endBelt("Nada pendente na fila.");
+  if (!run) await endBelt(trackSummary ? `${trackSummary} Nada pendente para pedir.` : "Nada pendente na fila.");
   return { ok: true, run };
 }
 
 /** Começa a esteira de acompanhamento (botão do popup ou automático). */
-async function startTrackingBelt({ tabId, auto = false, onlyDue = false }) {
+async function startTrackingBelt({ tabId, auto = false, onlyDue = false, thenRequest = false }) {
   const existing = await getActiveRun();
   if (existing) return { ok: false, error: "JA_TEM_TAREFA_EM_ANDAMENTO", run: existing };
   await chrome.storage.session.remove("lastSweepError");
-  await setBelt({ kind: "TRACK", active: true, auto, staleHours: auto || onlyDue ? AUTO_TRACK_STALE_HOURS : null, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
+  await setBelt({ kind: "TRACK", active: true, auto, thenRequest, staleHours: auto || onlyDue ? AUTO_TRACK_STALE_HOURS : null, processed: 0, failed: 0, failures: 0, stopRequested: false, startedAt: Date.now() });
   if (!auto) await setAutoStatus({ state: "MANUAL" });
   const first = await claimNextTrackingCompany([], 1, tabId);
-  if (!first) await endBelt("Nenhuma solicitação pendente de conferência.");
+  if (!first) {
+    const chained = await finishTrackingBelt("Nenhuma solicitação pendente de conferência.", tabId);
+    if (chained) return { ok: true, run: await getActiveRun() };
+  }
   return { ok: true, run: first };
 }
 
@@ -683,7 +703,7 @@ async function trackBeltOnFailure(run, motivo, tabId) {
   try {
     const visited = [...(run.trackVisited ?? []), run.establishment.id];
     const next = await claimNextTrackingCompany(visited, visited.length + 1, tabId);
-    if (!next) await endBelt(`Conferência concluída: ${belt.processed} empresa(s) conferida(s), ${failed} falha(s).`);
+    if (!next) await finishTrackingBelt(`Conferência concluída: ${belt.processed} empresa(s) conferida(s), ${failed} falha(s).`, tabId);
   } catch (error) {
     await endBelt(`Conferência interrompida ao buscar a próxima empresa: ${error.message}`);
   }
@@ -1099,7 +1119,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "WORK_NOW": {
-          sendResponse(await workNow({ tabId: sender.tab?.id, confirmRequest: Boolean(message.confirmRequest) }));
+          sendResponse(await workNow({ tabId: sender.tab?.id, decided: Boolean(message.decided), request: Boolean(message.request) }));
           break;
         }
         case "PAIR_FROM_PORTAL": {
@@ -1130,8 +1150,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           const run = await claimNextTrackingCompany(visited, visited.length + 1, sender.tab?.id);
           if (!run) {
-            await endBelt(`Conferência concluída: ${processed} empresa(s) conferida(s), ${belt?.failed ?? 0} falha(s).`);
-            await finishBatchAndReturnHome(sender.tab?.id);
+            const chained = await finishTrackingBelt(`Conferência concluída: ${processed} empresa(s) conferida(s), ${belt?.failed ?? 0} falha(s).`, sender.tab?.id);
+            if (!chained) await finishBatchAndReturnHome(sender.tab?.id);
           }
           sendResponse({ ok: true, done: !run, run });
           break;

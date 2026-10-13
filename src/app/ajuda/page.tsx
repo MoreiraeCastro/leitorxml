@@ -69,8 +69,8 @@ export default async function AjudaPage() {
           <Steps>
             <li>Em <Link href="/painel" className="underline">Início</Link>, veja “Pedir N tarefas”.</li>
             <li>Entre no Fisco Fácil com o certificado.</li>
-            <li>Na extensão, clique em <strong>“Trabalhar agora”</strong>. Primeiro ela baixa o que já está pronto.</li>
-            <li>Quando perguntar <strong>“Pedir agora?”</strong>, clique em OK. Ela passa de empresa em empresa sozinha. Não mexa na aba até acabar.</li>
+            <li>Na extensão, clique em <strong>“Trabalhar agora”</strong>. Ela pergunta logo no começo se é para pedir também as tarefas que faltam: clique em OK.</li>
+            <li>Ela primeiro baixa o que já está pronto e, na sequência, pede o que falta, de empresa em empresa, tudo num clique só. Não mexa na aba até acabar.</li>
             <li>Para interromper, clique em <strong>“Parar depois da etapa atual”</strong>. O que faltar continua na próxima vez.</li>
           </Steps>
           <p className="mt-3 text-amber-800">Pedir cria solicitações reais no Fisco Fácil. Se ele demorar demais ou mostrar bloqueio, pare e avise o João.</p>

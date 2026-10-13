@@ -171,12 +171,18 @@ $("workNow").addEventListener("click", async () => {
   say("Vendo o que há para fazer…");
   let response = await chrome.runtime.sendMessage({ type: "WORK_NOW" });
   if (response.needsConfirm) {
-    // Nada a baixar, mas há tarefas ainda não pedidas: pedir cria solicitações REAIS, então confirma antes.
-    if (!confirm(`Há ${response.needsConfirm.agendadas} solicitações ainda não pedidas ao Fisco Fácil.\n\nPedir agora, empresa por empresa?`)) {
+    // Há tarefas ainda não pedidas: pedir cria solicitações REAIS, então pergunta uma vez, antes de começar.
+    // A conferência/download (se houver) roda de qualquer jeito; os pedidos vêm na sequência só com o "OK".
+    const { agendadas, conferir } = response.needsConfirm;
+    const pergunta = conferir > 0
+      ? `Primeiro vou conferir e baixar ${conferir} solicitação(ões) já feitas.\n\nDepois disso, pedir também as ${agendadas} solicitações ainda não pedidas ao Fisco Fácil?\n\nOK = conferir e pedir · Cancelar = só conferir`
+      : `Há ${agendadas} solicitações ainda não pedidas ao Fisco Fácil.\n\nPedir agora, empresa por empresa?`;
+    const request = confirm(pergunta);
+    if (!request && conferir === 0) {
       say("");
       return;
     }
-    response = await chrome.runtime.sendMessage({ type: "WORK_NOW", confirmRequest: true });
+    response = await chrome.runtime.sendMessage({ type: "WORK_NOW", decided: true, request });
   }
   if (response.error === "JA_TEM_TAREFA_EM_ANDAMENTO") say("Já tem uma tarefa em andamento — espere terminar.");
   else if (response.error === "PRECISA_ABRIR_FISCO") say("Abra o Fisco Fácil, entre com o certificado e clique de novo.");
