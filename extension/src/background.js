@@ -246,14 +246,28 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const { lastNote } = await chrome.storage.session.get("lastNote");
   // Um passo anterior ao início desta corrida é da corrida passada — citá-lo confunde o diagnóstico (visto ao
   // vivo, 2026-10-13: "último passo: lista vazia" de outra tarefa, quando esta nem chegou a carregar página).
-  let onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
-  if (lastNote && lastNote.at < run.startedAt) {
-    const tabId = await findWorkTabId();
-    const tab = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
-    onde = `nenhum passo registrado nesta corrida — a página não carregou a extensão (aba em ${tab?.url?.split("?")[0] ?? "?"}; sessão do Fisco/certificado pode ter caído)`;
+  const onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
+  if (!lastNote || lastNote.at < run.startedAt) {
+    // A corrida não registrou NENHUM passo: a página do Fisco nem carregou a extensão (visto ao vivo, 2026-10-13: 5
+    // pedidos seguidos parados em certificadoWeb — sessão caída / Chrome esperando a escolha do certificado). O problema
+    // é do PC, não da tarefa: devolve o pedido à fila e para a esteira, em vez de queimar a fila um pedido a cada 4 min.
+    await stopBeltPcProblem(run).catch(() => {});
+    return;
   }
   await failActiveRun(run, `RUN_TRAVADA: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar nem reportar falha; ${onde}`, await findWorkTabId()).catch(() => {});
 });
+
+const PC_PROBLEM_MESSAGE =
+  "O Fisco Fácil não carregou nesta aba (a sessão caiu ou o Chrome está esperando você escolher o certificado). Entre no Fisco Fácil com o certificado e clique em “Trabalhar agora” de novo — o pedido voltou para a fila.";
+
+async function stopBeltPcProblem(run) {
+  await apiFetch(`/api/leitorxml/extensao/tarefas/${run.taskId}/devolver`, { method: "POST" }).catch(() => {});
+  await clearActiveRun();
+  await chrome.storage.session.set({ lastSweepError: PC_PROBLEM_MESSAGE });
+  const belt = await getBelt();
+  if (belt?.active) await endBelt(`Esteira parada: ${PC_PROBLEM_MESSAGE}`);
+  await setAutoStatus({ state: "PRECISA_ABRIR_FISCO" });
+}
 
 /** Busca a próxima tarefa e prepara a corrida: decide se dá pra continuar na mesma empresa (economiza navegação) ou se precisa voltar pra Página Principal e reentrar por procuração. */
 // ---------- Esteira de solicitações ----------

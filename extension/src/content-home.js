@@ -108,6 +108,9 @@ async function enterProcuracao(grupo, posicao) {
 
   const run = await getActiveRun();
   if (!run || run.step !== "NAVIGATE_HOME") return;
+  // Prova de vida da corrida: sem nenhum passo registrado, o vigia entende que a página nem carregou a extensão
+  // (problema do PC) e para a esteira em vez de culpar a tarefa.
+  note("página principal do Fisco carregada");
 
   if (runExpired(run)) {
     const motivo = `RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`;
