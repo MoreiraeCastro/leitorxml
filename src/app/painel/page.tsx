@@ -86,7 +86,7 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
   const previous = shiftMonth(ano, mes, -1);
   const next = shiftMonth(ano, mes, 1);
   const percent = counts.empresas ? Math.round((counts.empresasRecebidas / counts.empresas) * 100) : 0;
-  const chipCount: Record<FilterKey, number> = { TUDO: counts.empresas, PEDIR: counts.PEDIR, SEFAZ: counts.SEFAZ, PRONTA: counts.PRONTA, REVISAR: counts.REVISAR, PROBLEMA: counts.PROBLEMA };
+  const chipCount: Record<FilterKey, number> = { TUDO: counts.empresas, PEDIR: counts.PEDIR, SEFAZ: counts.SEFAZ, PRONTA: counts.PRONTA, REVISAR: counts.REVISAR, BAIXADO: counts.BAIXADO, PROBLEMA: counts.PROBLEMA };
 
   return (
     <Shell session={session}>

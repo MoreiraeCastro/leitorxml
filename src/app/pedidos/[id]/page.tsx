@@ -60,10 +60,18 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
         </form>
       )}
 
+      {task.baixado_at && (
+        <p className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          ✓ Baixado em {fmt(task.baixado_at)}{task.baixado_por_nome ? ` por ${task.baixado_por_nome}` : ""}.
+        </p>
+      )}
       {task.status === "DISPONIVEL_REVISAO" && (
-        <form action={revisarAction} className="mt-4">
-          <button type="submit" className="rounded bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Marcar como revisado</button>
-        </form>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-black/60">O ZIP está no portal e ainda não foi salvo em nenhum PC. A extensão salva sozinha com o Chrome aberto.</p>
+          <form action={revisarAction}>
+            <button type="submit" className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Marcar como revisado</button>
+          </form>
+        </div>
       )}
 
       <section className="mt-8">

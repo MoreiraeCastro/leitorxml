@@ -6,7 +6,7 @@ export type XmlCollectionFileValidation = "OK" | "QUARENTENA" | "REJEITADO";
 export type XmlCollectionStatus =
   | "AGENDADA" | "NA_FILA" | "AUTENTICANDO" | "SELECIONANDO_CONTEXTO" | "SOLICITADO"
   | "PROCESSANDO_SEFAZ" | "SEM_DOCUMENTOS" | "PRONTO_PARA_BAIXAR" | "BAIXANDO" | "VALIDANDO"
-  | "SALVANDO_SHAREPOINT" | "DISPONIVEL_REVISAO" | "REVISADO" | "EXPIRADA" | "FALHA" | "AGUARDANDO_INTERVENCAO";
+  | "SALVANDO_SHAREPOINT" | "DISPONIVEL_REVISAO" | "BAIXADO" | "REVISADO" | "EXPIRADA" | "FALHA" | "AGUARDANDO_INTERVENCAO";
 
 /** As 3 combinações mapeadas na Descoberta — NFC-e só existe como Emitente. */
 export const XML_COLLECTION_DOCUMENT_COMBINATIONS: ReadonlyArray<{ tipoDocumento: XmlCollectionDocumentType; papel: XmlCollectionRole }> = [

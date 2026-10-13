@@ -4,7 +4,7 @@ import { SharePointSetup } from "@/components/sharepoint-setup";
 import { getSharePointConnection, sharePointConfigured } from "@/lib/leitorxml/sharepoint";
 import { documentLabel, roleLabel } from "@/lib/leitorxml/status-labels";
 
-const IN_REVIEW = ["DISPONIVEL_REVISAO", "REVISADO"];
+const IN_REVIEW = ["DISPONIVEL_REVISAO", "BAIXADO", "REVISADO"];
 
 type Delivered = {
   id: string;

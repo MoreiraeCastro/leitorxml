@@ -21,6 +21,8 @@ describe("fases e etiquetas", () => {
     expect(phaseOf("PROCESSANDO_SEFAZ")).toBe("SEFAZ");
     expect(phaseOf("PRONTO_PARA_BAIXAR")).toBe("PRONTA");
     expect(phaseOf("DISPONIVEL_REVISAO")).toBe("REVISAR");
+    expect(phaseOf("BAIXADO")).toBe("BAIXADO");
+    expect(pillLabel("BAIXADO")).toBe("Baixado ✓");
     expect(phaseOf("EXPIRADA")).toBe("PROBLEMA");
   });
   it("problema diz qual é; os demais usam o rótulo da fase", () => {
@@ -62,12 +64,12 @@ describe("nextAction", () => {
   it("sem tarefas, manda criar as do mês", () => {
     expect(nextAction(base, "setembro/2026").title).toContain("Nenhuma tarefa");
   });
-  it("problema vem antes de tudo, depois prontas, depois pedir, depois revisar", () => {
+  it("problema vem antes de tudo, depois prontas, depois pedir, depois o que falta salvar no PC", () => {
     const counts = { ...base, empresas: 5, PROBLEMA: 1, PRONTA: 2, PEDIR: 3, REVISAR: 4 };
     expect(nextAction(counts, "x").title).toBe("Resolver 1 problema");
     expect(nextAction({ ...counts, PROBLEMA: 0 }, "x").title).toBe("Baixar 2 prontas");
     expect(nextAction({ ...counts, PROBLEMA: 0, PRONTA: 0 }, "x").title).toBe("Pedir 3 tarefas");
-    expect(nextAction({ ...counts, PROBLEMA: 0, PRONTA: 0, PEDIR: 0 }, "x").title).toBe("Revisar 4 arquivos");
+    expect(nextAction({ ...counts, PROBLEMA: 0, PRONTA: 0, PEDIR: 0 }, "x").title).toBe("4 arquivos ainda não salvos no PC");
   });
   it("tudo concluído → tudo em dia", () => {
     expect(nextAction({ ...base, empresas: 3, REVISADO: 9 }, "setembro/2026").title).toBe("Tudo em dia");

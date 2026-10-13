@@ -5,6 +5,7 @@ const TONE: Record<Phase, string> = {
   SEFAZ: "bg-amber-50 text-amber-800",
   PRONTA: "bg-sky-50 text-sky-800",
   REVISAR: "bg-emerald-50 text-emerald-800",
+  BAIXADO: "bg-emerald-600 text-white",
   REVISADO: "border border-emerald-200 bg-white text-emerald-700",
   SEM_DOCS: "bg-black/[0.03] text-black/40",
   PROBLEMA: "bg-red-50 text-red-700",

@@ -306,7 +306,7 @@ export async function sendPendingToSharePoint(db: SupabaseClient, limit = 20) {
   const { data, error } = await db
     .from("xml_collection_tasks")
     .select("id")
-    .in("status", ["DISPONIVEL_REVISAO", "REVISADO"])
+    .in("status", ["DISPONIVEL_REVISAO", "BAIXADO", "REVISADO"])
     .is("sharepoint_item_id", null)
     .not("storage_path_zip", "is", null)
     .order("updated_at", { ascending: true })

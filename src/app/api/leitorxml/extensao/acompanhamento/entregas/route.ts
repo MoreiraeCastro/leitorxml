@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const { data, error } = await db
       .from("xml_collection_tasks")
       .select(DELIVERY_SELECT)
-      .in("status", ["DISPONIVEL_REVISAO", "REVISADO"])
+      .in("status", ["DISPONIVEL_REVISAO", "BAIXADO", "REVISADO"])
       .is("sharepoint_path", null)
       .is("sharepoint_item_id", null)
       .not("storage_path_zip", "is", null)

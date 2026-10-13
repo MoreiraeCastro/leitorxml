@@ -343,6 +343,7 @@ async function deliverPending() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: item.path }),
         });
+        await markBaixado(item.taskId);
         chrome.downloads.erase({ id: downloadId }).catch(() => {}); // tira do histórico de transferências (o arquivo fica)
         delivered += 1;
       } catch {
@@ -356,10 +357,16 @@ async function deliverPending() {
   return { delivered, failed, skipped: false };
 }
 
-// ---------- Cópia para revisão (pasta Downloads deste PC) ----------
-// Todo PC conectado guarda os ZIPs que aguardam revisão em Downloads\Leitor de XML, mesmo sem OneDrive. Não marca nada
-// no portal. Se este PC tem o atalho do SharePoint (interruptor "deliverToFolder"), a pasta já recebe tudo pela
-// entrega e pelo OneDrive, então esta cópia não é necessária.
+/** Check "Baixado ✓" no portal: o ZIP está salvo numa pasta deste PC. Só o primeiro PC marca; repetir não muda nada. */
+async function markBaixado(taskId) {
+  await apiFetch(`/api/leitorxml/extensao/tarefas/${taskId}/baixado`, { method: "POST" }).catch(() => {});
+}
+
+// ---------- Cópia na pasta Downloads deste PC ----------
+// Todo PC conectado guarda os ZIPs em Downloads\Leitor de XML, mesmo sem OneDrive, e o primeiro que salvar marca o
+// check "Baixado ✓" no portal (pedido do João, 13/10/2026: controle de quais empresas já avançaram). A lista inclui os
+// já baixados recentemente, pra os dois PCs ficarem com cópia. Se este PC tem o atalho do SharePoint (interruptor
+// "deliverToFolder"), a pasta já recebe tudo pela entrega, então esta cópia não é necessária.
 let savingCopies = false;
 
 async function saveLocalCopies() {
@@ -372,6 +379,8 @@ async function saveLocalCopies() {
   try {
     const { items } = await (await apiFetch("/api/leitorxml/extensao/acompanhamento/revisao")).json();
     const done = new Set(localCopiesDone);
+    // Já salvos neste PC antes do check existir (ou cujo check falhou): marca agora, sem baixar de novo.
+    for (const item of items.filter((candidate) => done.has(candidate.taskId) && !candidate.baixado)) await markBaixado(item.taskId);
     for (const item of items.filter((candidate) => !done.has(candidate.taskId)).slice(0, 25)) {
       try {
         const { url } = await (await apiFetch(`/api/leitorxml/extensao/tarefas/${item.taskId}/arquivo`)).json();
@@ -379,6 +388,7 @@ async function saveLocalCopies() {
         const outcome = await waitDownload(downloadId);
         if (outcome !== "complete") throw new Error(`download ${outcome}`);
         chrome.downloads.erase({ id: downloadId }).catch(() => {});
+        if (!item.baixado) await markBaixado(item.taskId);
         done.add(item.taskId);
         saved += 1;
       } catch {

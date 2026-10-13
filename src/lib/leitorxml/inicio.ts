@@ -3,7 +3,8 @@
  * "fase" e decidir qual é a próxima ação. Sem banco nem React, pra poder ser testada.
  */
 
-export type Phase = "PEDIR" | "SEFAZ" | "PRONTA" | "REVISAR" | "REVISADO" | "SEM_DOCS" | "PROBLEMA";
+// REVISAR = ZIP já no portal mas ainda não salvo em nenhum PC; BAIXADO = algum PC salvou (fim do processo, com check).
+export type Phase = "PEDIR" | "SEFAZ" | "PRONTA" | "REVISAR" | "BAIXADO" | "REVISADO" | "SEM_DOCS" | "PROBLEMA";
 
 const PHASE_BY_STATUS: Record<string, Phase> = {
   AGENDADA: "PEDIR",
@@ -17,6 +18,7 @@ const PHASE_BY_STATUS: Record<string, Phase> = {
   VALIDANDO: "PRONTA",
   SALVANDO_SHAREPOINT: "PRONTA",
   DISPONIVEL_REVISAO: "REVISAR",
+  BAIXADO: "BAIXADO",
   REVISADO: "REVISADO",
   SEM_DOCUMENTOS: "SEM_DOCS",
   EXPIRADA: "PROBLEMA",
@@ -37,7 +39,7 @@ export function pillLabel(status: string): string {
     case "BAIXANDO": return "Baixando";
     case "VALIDANDO": return "Validando";
     default:
-      return { PEDIR: "Para pedir", SEFAZ: "No SEFAZ", PRONTA: "Pronta", REVISAR: "Revisar", REVISADO: "Revisado", SEM_DOCS: "Sem docs", PROBLEMA: "Problema" }[phaseOf(status)];
+      return { PEDIR: "Para pedir", SEFAZ: "No SEFAZ", PRONTA: "Pronta", REVISAR: "Falta salvar", BAIXADO: "Baixado ✓", REVISADO: "Revisado", SEM_DOCS: "Sem docs", PROBLEMA: "Problema" }[phaseOf(status)];
   }
 }
 
@@ -67,8 +69,8 @@ export type Counts = Record<Phase, number> & { empresas: number; empresasRecebid
 
 /** Uma empresa está "recebida" quando todas as suas tarefas já trouxeram resultado (ou confirmaram que não há documentos). */
 export function summarize(rows: CompanyRow[]): Counts {
-  const counts: Counts = { PEDIR: 0, SEFAZ: 0, PRONTA: 0, REVISAR: 0, REVISADO: 0, SEM_DOCS: 0, PROBLEMA: 0, empresas: rows.length, empresasRecebidas: 0 };
-  const received = new Set<Phase>(["REVISAR", "REVISADO", "SEM_DOCS"]);
+  const counts: Counts = { PEDIR: 0, SEFAZ: 0, PRONTA: 0, REVISAR: 0, BAIXADO: 0, REVISADO: 0, SEM_DOCS: 0, PROBLEMA: 0, empresas: rows.length, empresasRecebidas: 0 };
+  const received = new Set<Phase>(["REVISAR", "BAIXADO", "REVISADO", "SEM_DOCS"]);
   for (const row of rows) {
     const tasks = Object.values(row.tasks);
     for (const task of tasks) counts[task.phase] += 1;
@@ -77,13 +79,14 @@ export function summarize(rows: CompanyRow[]): Counts {
   return counts;
 }
 
-export type FilterKey = "TUDO" | "PEDIR" | "SEFAZ" | "PRONTA" | "REVISAR" | "PROBLEMA";
+export type FilterKey = "TUDO" | "PEDIR" | "SEFAZ" | "PRONTA" | "REVISAR" | "BAIXADO" | "PROBLEMA";
 export const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "TUDO", label: "Tudo" },
   { key: "PEDIR", label: "Para pedir" },
   { key: "SEFAZ", label: "No SEFAZ" },
   { key: "PRONTA", label: "Prontas" },
-  { key: "REVISAR", label: "Para revisar" },
+  { key: "REVISAR", label: "Falta salvar no PC" },
+  { key: "BAIXADO", label: "Baixados ✓" },
   { key: "PROBLEMA", label: "Problemas" },
 ];
 
@@ -113,7 +116,7 @@ export function nextAction(counts: Counts, competencia: string): NextAction {
   if (counts.PROBLEMA > 0) return { tone: "danger", title: `Resolver ${plural(counts.PROBLEMA, "problema", "problemas")}`, detail: "Use “Pedir de novo” nas tarefas em vermelho.", cta: { label: "Ver problemas", href: "?f=PROBLEMA" } };
   if (counts.PRONTA > 0) return { tone: "info", title: `Baixar ${plural(counts.PRONTA, "pronta", "prontas")}`, detail: "Abra o Fisco Fácil e deixe a aba aberta: a extensão baixa sozinha.", cta: { label: "Abrir Fisco Fácil", href: FISCO_URL, external: true } };
   if (counts.PEDIR > 0) return { tone: "info", title: `Pedir ${plural(counts.PEDIR, "tarefa", "tarefas")}`, detail: "Abra o Fisco Fácil e, na extensão, clique em “Trabalhar agora”.", cta: { label: "Abrir Fisco Fácil", href: FISCO_URL, external: true } };
-  if (counts.REVISAR > 0) return { tone: "ok", title: `Revisar ${plural(counts.REVISAR, "arquivo", "arquivos")}`, detail: "Abra cada um, confira e marque como revisado.", cta: { label: "Ver para revisar", href: "?f=REVISAR" } };
+  if (counts.REVISAR > 0) return { tone: "ok", title: `${plural(counts.REVISAR, "arquivo ainda não salvo", "arquivos ainda não salvos")} no PC`, detail: "Com o Chrome aberto, a extensão salva sozinha a cada 20 min e marca “Baixado ✓”.", cta: { label: "Ver quais", href: "?f=REVISAR" } };
   if (counts.SEFAZ > 0) return { tone: "neutral", title: `Aguardando o SEFAZ (${counts.SEFAZ})`, detail: "A extensão confere sozinha. Pode levar até 5 dias." };
   return { tone: "ok", title: "Tudo em dia", detail: `${competencia} concluído.` };
 }

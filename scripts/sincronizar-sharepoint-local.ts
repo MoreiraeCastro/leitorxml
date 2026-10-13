@@ -47,7 +47,7 @@ type Establishment = { cnpj: string; razao_social: string; sharepoint_folder_pat
 const { data, error } = await db
   .from("xml_collection_tasks")
   .select("id,storage_path_zip,tipo_documento,papel,competencia_ano,competencia_mes,xml_watch_establishments(cnpj,razao_social,sharepoint_folder_path)")
-  .in("status", ["DISPONIVEL_REVISAO", "REVISADO"])
+  .in("status", ["DISPONIVEL_REVISAO", "BAIXADO", "REVISADO"])
   .is("sharepoint_path", null)
   .not("storage_path_zip", "is", null);
 if (error) throw error;
