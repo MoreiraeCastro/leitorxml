@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { acquireEstablishmentLock, isEligibleForMonthlyRun, releaseEstablishmentLock, resolveAccessContext } from "./establishments";
+import { ESTABLISHMENT_LOCK_TTL_MS, acquireEstablishmentLock, isEligibleForMonthlyRun, releaseEstablishmentLock, resolveAccessContext } from "./establishments";
 import { upsertProcurationIndex } from "./procuration-index";
 import { XML_COLLECTION_DOCUMENT_COMBINATIONS } from "./types";
 
@@ -134,8 +134,18 @@ export async function escalateStaleProcessing(db: SupabaseClient, options: { now
 const CANDIDATE_COLUMNS =
   "id,establishment_id,competencia_ano,competencia_mes,tipo_documento,papel,status,tentativas,xml_watch_establishments(id,cnpj,razao_social,situacao_cadastral,certificado_tipo,procuracao_grupo,procuracao_posicao)";
 
-async function fetchClaimCandidates(db: SupabaseClient, onlyEstablishmentId?: string) {
-  let query = db.from("xml_collection_tasks").select(CANDIDATE_COLUMNS).in("status", ["AGENDADA", "NA_FILA"]);
+/**
+ * Tarefa em AUTENTICANDO há mais que a trava da empresa ficou órfã: a corrida dela morreu sem reportar nada
+ * (extensão fechada, esteira parada, aba perdida — visto ao vivo, 2026-10-13). Uma corrida de verdade leva
+ * ~30s e o vigia da extensão derruba em 3 min, então depois da TTL da trava ela volta a ser elegível.
+ */
+function claimableFilter(now: Date) {
+  const orphanBefore = new Date(now.getTime() - ESTABLISHMENT_LOCK_TTL_MS).toISOString();
+  return `status.in.(AGENDADA,NA_FILA),and(status.eq.AUTENTICANDO,updated_at.lt.${orphanBefore})`;
+}
+
+async function fetchClaimCandidates(db: SupabaseClient, now: Date, onlyEstablishmentId?: string) {
+  let query = db.from("xml_collection_tasks").select(CANDIDATE_COLUMNS).or(claimableFilter(now));
   if (onlyEstablishmentId) query = query.eq("establishment_id", onlyEstablishmentId);
   const { data, error } = await query.order("competencia_ano", { ascending: true }).order("competencia_mes", { ascending: true }).order("updated_at", { ascending: true }).limit(50);
   if (error) throw new Error("NEXT_TASK_LOOKUP_FAILED");
@@ -153,7 +163,7 @@ async function tryClaimFromCandidates(db: SupabaseClient, userId: string, now: D
       .from("xml_collection_tasks")
       .update({ status: "AUTENTICANDO", tentativas: candidate.tentativas + 1, updated_at: now.toISOString() })
       .eq("id", candidate.id)
-      .in("status", ["AGENDADA", "NA_FILA"])
+      .or(claimableFilter(now))
       .select("*")
       .maybeSingle();
     if (claimError) throw new Error("TASK_CLAIM_FAILED");
@@ -185,10 +195,10 @@ async function tryClaimFromCandidates(db: SupabaseClient, userId: string, now: D
  */
 export async function claimNextTask(db: SupabaseClient, userId: string, now: Date = new Date(), options: { preferEstablishmentId?: string } = {}) {
   if (options.preferEstablishmentId) {
-    const sameCompany = await tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db, options.preferEstablishmentId));
+    const sameCompany = await tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db, now, options.preferEstablishmentId));
     if (sameCompany) return sameCompany;
   }
-  return tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db));
+  return tryClaimFromCandidates(db, userId, now, await fetchClaimCandidates(db, now));
 }
 
 const TRACKING_COLUMNS =

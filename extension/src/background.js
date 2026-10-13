@@ -244,7 +244,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
   const { lastNote } = await chrome.storage.session.get("lastNote");
-  const onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
+  // Um passo anterior ao início desta corrida é da corrida passada — citá-lo confunde o diagnóstico (visto ao
+  // vivo, 2026-10-13: "último passo: lista vazia" de outra tarefa, quando esta nem chegou a carregar página).
+  let onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
+  if (lastNote && lastNote.at < run.startedAt) {
+    const tabId = await findWorkTabId();
+    const tab = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
+    onde = `nenhum passo registrado nesta corrida — a página não carregou a extensão (aba em ${tab?.url?.split("?")[0] ?? "?"}; sessão do Fisco/certificado pode ter caído)`;
+  }
   await failActiveRun(run, `RUN_TRAVADA: ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar nem reportar falha; ${onde}`, await findWorkTabId()).catch(() => {});
 });
 
@@ -976,17 +983,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "DISCOVERY_FALLBACK": {
+          // A empresa não estava na procuração do índice: recomeça pela Página Principal em modo descoberta,
+          // em todos os grupos, pulando a procuração que já falhou. Só uma vez por corrida.
+          const run = await getActiveRun();
+          if (!run || run.discovery || run.discoveryFallbackFrom || run.accessContext?.type !== "PROCURACAO" || run.accessContext.posicao == null) {
+            return sendResponse({ ok: false });
+          }
+          const from = { grupo: run.accessContext.grupo, posicao: run.accessContext.posicao };
+          await setActiveRun({
+            ...run,
+            step: "NAVIGATE_HOME",
+            accessContext: { type: "PROCURACAO", grupo: null, posicao: null },
+            discoveryExclude: [from],
+            discoveryFallbackFrom: from,
+            listaContribuintesAttempts: 0,
+            startedAt: Date.now(),
+          });
+          await navigateToHome(sender.tab?.id ?? null);
+          sendResponse({ ok: true });
+          break;
+        }
         case "DISCOVERY_NOT_FOUND": {
           // Não é essa posição — avança o cursor e volta pro histórico pra content-home.js testar a próxima.
           const run = await getActiveRun();
           if (!run?.discovery) return sendResponse({ ok: false, error: "NO_DISCOVERY_IN_PROGRESS" });
           const nextCursor = run.discovery.cursor + 1;
           if (nextCursor >= run.discovery.queue.length) {
-            await failActiveRun(run, `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`, sender.tab?.id);
+            const from = run.discoveryFallbackFrom;
+            const motivo = from
+              ? `EMPRESA_FORA_DAS_PROCURACOES: CNPJ ${run.establishment.cnpj} não está mais na procuração ${from.grupo ?? "?"}/${from.posicao} (onde o índice dizia) nem em nenhuma das outras ${run.discovery.queue.length} procurações — conferir no Fisco Fácil se a procuração dessa empresa ainda está ativa.`
+              : `CNPJ ${run.establishment.cnpj} não encontrado em nenhuma das ${run.discovery.queue.length} procurações testadas.`;
+            await failActiveRun(run, motivo, sender.tab?.id);
             sendResponse({ ok: true, done: true });
             break;
           }
-          await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor } });
+          // Cada procuração testada é progresso: renova o relógio do vigia (a fila inteira passa fácil de 3 min)
+          // e zera o contador de segurança da lista de empresas (que conta visitas, não falhas).
+          await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor }, startedAt: Date.now(), listaContribuintesAttempts: 0 });
           const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
           if (tab) await goBackWithFreshLoad(tab.id);
           sendResponse({ ok: true });

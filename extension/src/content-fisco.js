@@ -142,6 +142,14 @@ async function handleListaContribuintes(run) {
       await chrome.runtime.sendMessage({ type: "DISCOVERY_NOT_FOUND" });
       return;
     }
+    // A posição veio do índice e a empresa não está lá (visto ao vivo, 2026-10-13: 19 empresas indexadas na
+    // varredura de 30/09 não apareciam mais nas procurações anotadas). Em vez de falhar, procura nas outras
+    // procurações — ao achar, o índice é atualizado e as próximas coletas já vão direto.
+    if (run.accessContext?.posicao != null) {
+      note(`empresa não está na procuração ${run.accessContext.grupo ?? "?"}/${run.accessContext.posicao} — procurando nas outras`);
+      const fallback = await chrome.runtime.sendMessage({ type: "DISCOVERY_FALLBACK" });
+      if (fallback?.ok) return;
+    }
     throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj}`);
   }
   if (run.discovery) {

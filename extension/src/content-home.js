@@ -159,7 +159,10 @@ async function enterProcuracao(grupo, posicao) {
     let discovery = run.discovery;
     if (!discovery) {
       const positions = await listProcuracaoPositions();
-      const queue = run.accessContext.grupo ? positions.filter((p) => p.grupo === run.accessContext.grupo) : positions;
+      const exclude = new Set((run.discoveryExclude ?? []).map((p) => `${p.grupo}|${p.posicao}`));
+      const queue = (run.accessContext.grupo ? positions.filter((p) => p.grupo === run.accessContext.grupo) : positions).filter(
+        (p) => !exclude.has(`${p.grupo}|${p.posicao}`),
+      );
       if (!queue.length) throw new Error("NENHUMA_PROCURACAO_ENCONTRADA_NO_MODAL");
       const response = await chrome.runtime.sendMessage({ type: "SET_DISCOVERY_QUEUE", queue });
       discovery = response.discovery;

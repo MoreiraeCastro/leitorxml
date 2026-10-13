@@ -306,7 +306,36 @@ function visibleClickTarget(el) {
   return label && label.offsetWidth > 0 ? label : el;
 }
 
-async function realNavigationClick(el, { downloadTaskId = null } = {}) {
+/**
+ * Se `cover` é a máscara de um diálogo modal do PrimeFaces (`<id>_modal`, `.ui-widget-overlay`), fecha o
+ * diálogo pelo × da barra de título (ou um botão Fechar/OK/Ciente) e espera a máscara sumir. Devolve true se fechou.
+ */
+async function dismissBlockingDialog(cover) {
+  const mask = cover.closest?.(".ui-widget-overlay");
+  if (!mask?.id?.endsWith("_modal")) return false;
+  const dialog = document.getElementById(mask.id.slice(0, -"_modal".length));
+  if (!dialog) return false;
+  const text = dialog.textContent.replace(/\s+/g, " ").trim().slice(0, 160);
+  const button =
+    dialog.querySelector(".ui-dialog-titlebar-close") ??
+    [...dialog.querySelectorAll("button, a")].find((b) => b.offsetWidth > 0 && /^(fechar|ok|ciente|entendi)$/i.test(b.textContent.trim()));
+  if (!button) return false;
+  note(`aviso do site por cima da tela (${dialog.id}: "${text}") — fechando`);
+  try {
+    await realNavigationClick(button, { retriedAfterDialog: true });
+  } catch {
+    realClick(button);
+  }
+  try {
+    await waitFor(() => !(mask.isConnected && mask.offsetWidth > 0), { timeoutMs: 5000, label: `aviso ${dialog.id} fechar` });
+  } catch {
+    return false;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return true;
+}
+
+async function realNavigationClick(el, { downloadTaskId = null, retriedAfterDialog = false } = {}) {
   el = visibleClickTarget(el);
   // Mesma blindagem de `realClick()`: se o clique não disparar o handler
   // AJAX esperado do jeito certo, o navegador pode cair no submit nativo do
@@ -335,6 +364,11 @@ async function realNavigationClick(el, { downloadTaskId = null } = {}) {
   // elemento cobrir o ponto, ou o ponto cair fora da janela, o CDP "clica com
   // sucesso" em outra coisa e nada acontece — nunca clicar às cegas.
   const topmost = document.elementFromPoint(x, y);
+  // Aviso do próprio site aberto por cima de tudo (visto ao vivo, 2026-10-13: `#alertNotificacao_modal`
+  // cobrindo o menu lateral): fecha o diálogo e tenta o clique de novo, uma vez.
+  if (topmost && !(el === topmost || el.contains(topmost)) && !retriedAfterDialog && (await dismissBlockingDialog(topmost))) {
+    return realNavigationClick(el, { downloadTaskId, retriedAfterDialog: true });
+  }
   if (!topmost || !(el === topmost || el.contains(topmost))) {
     const describe = (node) => (node ? `${node.tagName}${node.id ? `#${node.id}` : ""}.${String(node.className ?? "").slice(0, 40)}` : "nada (fora da janela)");
     throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}] [overlay: ${describeLoadingOverlay()}]`);
