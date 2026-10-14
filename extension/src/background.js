@@ -396,6 +396,16 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // A corrida não registrou NENHUM passo: a página do Fisco nem carregou a extensão (visto ao vivo, 2026-10-13: 5
     // pedidos seguidos parados em certificadoWeb — sessão caída / Chrome esperando a escolha do certificado). O problema
     // é do PC, não da tarefa: devolve o pedido à fila e para a esteira, em vez de queimar a fila um pedido a cada 4 min.
+    // Antes de parar a esteira, uma segunda chance numa aba nova: em 14/10/2026 a página principal recarregou
+    // ("complete") mas o script dela nunca deu sinal — aba presa, não sessão caída.
+    if (!run.pcRetried) {
+      trail("nenhum passo da página em 3 min — tentando de novo numa aba nova da Página Principal");
+      const now = Date.now();
+      await setActiveRun({ ...run, pcRetried: true, startedAt: now, claimedAt: now });
+      const fresh = await chrome.tabs.create({ url: HOME_URL, active: true });
+      trail(`aba nova ${fresh.id} aberta`);
+      return;
+    }
     await stopBeltPcProblem(run).catch(() => {});
     return;
   }
@@ -1488,8 +1498,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case "ENSURE_PAGE_GLOBALS": {
           if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
-          await ensurePageGlobals(sender.tab.id);
-          sendResponse({ ok: true });
+          // Sem prazo, uma página travada (diálogo nativo aberto, thread ocupada) prendia o content script aqui
+          // antes de qualquer nota — visto ao vivo 14/10/2026, virou "problema do PC" e parou a esteira.
+          try {
+            await withTimeout(ensurePageGlobals(sender.tab.id), "preparar a página do Fisco", 10000);
+            sendResponse({ ok: true });
+          } catch (error) {
+            await trail(`preparar a página falhou: ${error.message}`);
+            sendResponse({ ok: false, error: error.message });
+          }
           break;
         }
         case "UPDATE_EXTENSION": {

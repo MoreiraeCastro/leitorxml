@@ -34,6 +34,14 @@ window.addEventListener("pageshow", (event) => {
 
 /** Rastro de passos da execução atual (ex.: "digitou CNPJ", "clicou Filtrar") — anexado em falhas pra dar contexto sem precisar perguntar o que apareceu na tela. */
 const executionTrail = [];
+/** Pede ao background o preparo da página, com prazo próprio: nunca deixa o content script preso antes de começar. */
+async function ensurePageGlobalsFromContent() {
+  await Promise.race([
+    chrome.runtime.sendMessage({ type: "ENSURE_PAGE_GLOBALS" }).catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 12000)),
+  ]);
+}
+
 function note(step) {
   executionTrail.push(step);
   if (executionTrail.length > 20) executionTrail.shift();
