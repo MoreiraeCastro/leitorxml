@@ -17,6 +17,21 @@ window.addEventListener("error", (event) => {
   if (pageErrorLog.length > 10) pageErrorLog.shift();
 });
 
+/**
+ * Página restaurada da memória do Chrome (bfcache, ex.: pelo "voltar") não roda os content scripts de novo: no meio de
+ * uma corrida isso deixava a extensão parada na Página Principal (14/10/2026). Se houver corrida em andamento, recarrega
+ * de verdade para a extensão assumir.
+ */
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  chrome.runtime
+    .sendMessage({ type: "GET_ACTIVE_RUN" })
+    .then((response) => {
+      if (response?.run) location.reload();
+    })
+    .catch(() => {});
+});
+
 /** Rastro de passos da execução atual (ex.: "digitou CNPJ", "clicou Filtrar") — anexado em falhas pra dar contexto sem precisar perguntar o que apareceu na tela. */
 const executionTrail = [];
 function note(step) {

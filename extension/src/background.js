@@ -15,30 +15,9 @@ const PORTAL_ORIGINS = new Set(["https://portalmoreiraecastro.com.br", "http://l
 // rodar toda vez que o service worker acorda (não persiste sozinho).
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" }).catch(() => {});
 
-/**
- * "Voltar" no histórico, mas garantindo carregamento real da página — às
- * vezes o Chrome restaura do bfcache em vez de recarregar de verdade, e
- * scripts do próprio Fisco Fácil que só rodam num load fresco (ex.: a
- * função `janela`, usada por `chamaAplicacao`) ficam indefinidos, quebrando
- * o próximo clique (confirmado ao vivo, 2026-09-30: "ReferenceError: janela
- * is not defined"). `pageshow` com `persisted:true` é o sinal padrão de
- * restauração via bfcache — força reload nesse caso.
- */
-async function goBackWithFreshLoad(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      window.addEventListener(
-        "pageshow",
-        (event) => {
-          if (event.persisted) location.reload();
-        },
-        { once: true },
-      );
-      history.back();
-    },
-  });
-}
+// (Havia aqui um "voltar no histórico com recarga" usado entre procurações. Saiu em 14/10/2026: o ouvinte de
+// `pageshow` era posto na página que SAÍA, não na que o Chrome restaurava da memória, então a Página Principal voltava
+// do bfcache sem a extensão rodar. Agora tudo vai por `navigateToHome`, que abre a página do zero.)
 
 const COMPANY_PAGE_URL = "https://fisco-facil.fazenda.rj.gov.br/SATI-FiscoFacil/privado/mainAbasContribuinte.xhtml";
 
@@ -410,7 +389,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   // Um passo anterior ao início desta corrida é da corrida passada — citá-lo confunde o diagnóstico (visto ao
   // vivo, 2026-10-13: "último passo: lista vazia" de outra tarefa, quando esta nem chegou a carregar página).
   const onde = lastNote ? `último passo: "${lastNote.step}" em ${lastNote.path}, ${Math.round((Date.now() - lastNote.at) / 1000)}s atrás` : "sem passo registrado";
-  if (!lastNote || lastNote.at < run.startedAt) {
+  // Só é "problema do PC" se a corrida INTEIRA não registrou passo nenhum. `startedAt` é renovado a cada procuração
+  // testada na descoberta, então compará-lo com o último passo confundia "travou na 2ª procuração" com "a página nem
+  // carregou" e devolvia o pedido sem registrar a falha (14/10/2026).
+  if (!lastNote || lastNote.at < (run.claimedAt ?? run.startedAt)) {
     // A corrida não registrou NENHUM passo: a página do Fisco nem carregou a extensão (visto ao vivo, 2026-10-13: 5
     // pedidos seguidos parados em certificadoWeb — sessão caída / Chrome esperando a escolha do certificado). O problema
     // é do PC, não da tarefa: devolve o pedido à fila e para a esteira, em vez de queimar a fila um pedido a cada 4 min.
@@ -1267,8 +1249,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Cada procuração testada é progresso: renova o relógio do vigia (a fila inteira passa fácil de 3 min)
           // e zera o contador de segurança da lista de empresas (que conta visitas, não falhas).
           await setActiveRun({ ...run, discovery: { ...run.discovery, cursor: nextCursor }, startedAt: Date.now(), listaContribuintesAttempts: 0 });
-          const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
-          if (tab) await goBackWithFreshLoad(tab.id);
+          // Página Principal aberta do zero, NUNCA pelo "voltar": o Chrome restaurava a página da memória (bfcache), a
+          // extensão não rodava nela e a descoberta parava na 2ª procuração (registro de 14/10/2026, 13h12).
+          const [tab] = sender.tab ? [sender.tab] : await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
+          if (tab) await navigateToHome(tab.id);
           sendResponse({ ok: true });
           break;
         }
@@ -1313,8 +1297,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
           }
           await setActiveRun({ ...run, sweepCursor: nextCursor });
-          const [tab] = await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
-          if (tab) await goBackWithFreshLoad(tab.id);
+          // Mesmo motivo da descoberta: Página Principal do zero, não pelo "voltar" (bfcache).
+          const [tab] = sender.tab ? [sender.tab] : await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
+          if (tab) await navigateToHome(tab.id);
           sendResponse({ ok: true });
           break;
         }
