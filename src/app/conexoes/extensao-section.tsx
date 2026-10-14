@@ -19,8 +19,9 @@ export async function ExtensaoSection() {
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-5 py-4">
         <div>
           <h2 className="font-medium text-[#082240]">Instalar em outro computador</h2>
+          {/* Sem a opção do ZIP solto: ele não traz o atualizador, e o PC ficaria sem atualização automática. */}
           <p className="text-sm text-black/60">Baixe o instalador, abra e siga a janela. Passo a passo em <Link href="/ajuda" className="underline">Ajuda → Instalar a extensão</Link>.</p>
-          <a href={withBasePath("/api/leitorxml/extensao/pacote")} className="text-xs text-black/50 underline">Prefere o ZIP, para instalar manualmente?</a>
+          <p className="text-xs text-black/50">Depois de instalar, feche o Chrome por completo e abra de novo. Daí em diante a extensão se atualiza sozinha.</p>
         </div>
         <a href={withBasePath("/api/leitorxml/extensao/instalador")} className="rounded-lg bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:opacity-90">Baixar o instalador</a>
       </section>

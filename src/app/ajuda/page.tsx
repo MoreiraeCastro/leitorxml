@@ -120,9 +120,10 @@ export default async function AjudaPage() {
               </ul>
             </li>
             <li>Clique no ícone de quebra-cabeça do Chrome (canto superior direito) e no <strong>alfinete</strong> ao lado de “Leitor de XML”, para o ícone ficar sempre visível.</li>
+            <li><strong>Feche o Chrome por completo</strong> (todas as janelas e, se houver, o ícone do Chrome perto do relógio → Sair) e abra de novo. Só assim ele enxerga o atualizador.</li>
           </Steps>
-          <p className="mt-3 text-black/60">A pasta <code>C:\LeitorXML</code> precisa ficar sempre ali: não apague nem mude de lugar. Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”: feche-o ou clique em <strong>Cancelar</strong>.</p>
-          <p className="mt-2 text-black/60">Quando o João avisar de uma versão nova: baixe o instalador de novo e abra. Ele atualiza a pasta; depois, em <code>chrome://extensions</code>, clique na setinha circular de recarregar da extensão.</p>
+          <p className="mt-3 text-black/60">As pastas <code>C:\LeitorXML</code> e <code>C:\LeitorXML-atualizador</code> precisam ficar sempre ali: não apague nem mude de lugar. Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”: feche-o ou clique em <strong>Cancelar</strong>.</p>
+          <p className="mt-2 text-black/60">Versões novas chegam sozinhas: a extensão confere a cada 30 minutos e se atualiza quando não está trabalhando. Para atualizar na hora, no popup: <strong>Mais opções → Atualizar extensão</strong>. Só precisa rodar o instalador de novo num PC novo, ou se o popup disser que o atualizador não está instalado.</p>
         </Topic>
 
         <Topic title="Preparar o PC" tag="depois de instalar a extensão">
