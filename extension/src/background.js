@@ -424,9 +424,10 @@ const PC_PROBLEM_MESSAGE =
   "O Fisco Fácil não carregou nesta aba (a sessão caiu ou o Chrome está esperando você escolher o certificado). Entre no Fisco Fácil com o certificado e clique em “Trabalhar agora” de novo — o pedido voltou para a fila.";
 
 async function stopBeltPcProblem(run) {
-  const tabId = await findWorkTabId();
-  const tab = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
-  const diagnostico = `aba ${tab ? `${tab.status} em ${String(tab.url).split("?")[0]} ("${String(tab.title ?? "").slice(0, 60)}")` : "não encontrada"}; rastro: ${await describeTrail(run.startedAt)}`;
+  // Todas as abas do Fisco/portal SEFAZ: com mais de uma aberta, a "aba de trabalho" pode não ser a primeira.
+  const tabs = await chrome.tabs.query({ url: ["https://fisco-facil.fazenda.rj.gov.br/*", "https://ssacert.fazenda.rj.gov.br/*"] });
+  const abas = tabs.map((tab) => `${tab.id}${tab.active ? "*" : ""} ${tab.status} em ${String(tab.url).replace(/^https:\/\//, "").split("?")[0]}`).join(" | ") || "nenhuma";
+  const diagnostico = `abas: ${abas}; rastro: ${await describeTrail(run.claimedAt ?? run.startedAt)}`;
   await apiFetch(`/api/leitorxml/extensao/tarefas/${run.taskId}/devolver`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -781,9 +782,30 @@ async function beltOnFailure(tabId, motivo) {
 }
 
 /** Leva a aba pra Página Principal do portal: a aba informada, senão uma já aberta no portal, senão uma nova. */
+/** Espera a aba começar a sair de onde está (URL nova ou carregando). Devolve false se ela ficou parada. */
+async function waitForTabToNavigate(tabId, fromUrl, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab) return false;
+    if (tab.status === "loading" || (tab.pendingUrl && tab.pendingUrl !== fromUrl) || (tab.url && tab.url !== fromUrl)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return false;
+}
+
 async function navigateToHome(preferredTabId) {
   if (preferredTabId != null) {
+    const before = await chrome.tabs.get(preferredTabId).catch(() => null);
+    trail(`indo para a Página Principal pela aba ${preferredTabId} (estava em ${String(before?.url ?? "?").replace(/^https:\/\//, "").split("?")[0]})`);
     await chrome.tabs.update(preferredTabId, { active: true, url: HOME_URL });
+    // Em 14/10/2026 a aba ficou parada na lista de empresas depois deste comando (nenhuma navegação registrada) e a
+    // corrida morreu muda. Se a aba não se mexer, abre a Página Principal numa aba nova e segue por ela.
+    if (before?.url && before.url !== HOME_URL && !(await waitForTabToNavigate(preferredTabId, before.url))) {
+      trail(`a aba ${preferredTabId} não saiu da página — abrindo a Página Principal numa aba nova`);
+      const fresh = await chrome.tabs.create({ url: HOME_URL, active: true });
+      trail(`aba nova ${fresh.id} aberta`);
+    }
     return;
   }
   const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
@@ -847,6 +869,8 @@ async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = n
     // dom-utils.js) e falha alto se a corrida já passou do tempo esperado,
     // em vez de ficar presa silenciosamente até alguém notar e resetar no banco.
     startedAt: Date.now(),
+    // O vigia renova `startedAt` a cada passo da descoberta; o rastro anexado às falhas parte daqui (início do pedido).
+    claimedAt: Date.now(),
     chainCount,
   };
   await setActiveRun(run);
@@ -989,7 +1013,7 @@ async function failActiveRun(run, motivo, tabId = null) {
     return;
   }
   trail(`falha: ${motivo.slice(0, 120)}`);
-  await reportFalha(run.taskId, `${motivo.slice(0, 2000)} [Rastro: ${await describeTrail(run.startedAt)}]`);
+  await reportFalha(run.taskId, `${motivo.slice(0, 2000)} [Rastro: ${await describeTrail(run.claimedAt ?? run.startedAt)}]`);
   await beltOnFailure(tabId ?? (await findWorkTabId()), motivo);
 }
 
