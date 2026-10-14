@@ -106,9 +106,13 @@ async function selfUpdate({ manual = false } = {}) {
   try {
     result = await withTimeout(chrome.runtime.sendNativeMessage(NATIVE_UPDATER, { acao: "atualizar" }), "atualizador", 180000);
   } catch (error) {
-    const message = /not found|specified native messaging host/i.test(error.message)
-      ? "O atualizador não está instalado neste PC: rode o instalador uma vez (portal → Conexões → Extensão)."
-      : `O atualizador falhou: ${error.message}`;
+    // Sempre com o erro original do Chrome: "não instalado" (host not found) e "proibido" (forbidden — esta extensão não
+    // está na lista do atualizador) pedem soluções diferentes, e juntar os dois escondeu o diagnóstico em 14/10/2026.
+    const message = /not found/i.test(error.message)
+      ? `O atualizador não está instalado neste PC: rode o instalador uma vez (portal → Conexões → Extensão). [Chrome: ${error.message}]`
+      : /forbidden/i.test(error.message)
+        ? `O atualizador deste PC não reconhece esta extensão (id ${chrome.runtime.id}): rode o instalador de novo. [Chrome: ${error.message}]`
+        : `O atualizador falhou: ${error.message}`;
     trail(`atualização: ${message}`);
     return { ok: false, error: message };
   }
@@ -319,10 +323,18 @@ async function getSettings() {
 async function apiFetch(path, options = {}) {
   const { apiBaseUrl, apiToken } = await getSettings();
   if (!apiToken) throw new Error("SEM_TOKEN_CONFIGURADO");
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...options,
-    headers: { ...(options.headers ?? {}), Authorization: `Bearer ${apiToken}`, "X-Leitor-Versao": chrome.runtime.getManifest().version },
-  });
+  const doFetch = () =>
+    fetch(`${apiBaseUrl}${path}`, {
+      ...options,
+      headers: { ...(options.headers ?? {}), Authorization: `Bearer ${apiToken}`, "X-Leitor-Versao": chrome.runtime.getManifest().version },
+    });
+  let response = await doFetch();
+  // 502/503/504 = portal reiniciando (publicação de versão leva ~10 s): espera e tenta mais uma vez antes de dar erro
+  // (visto em 14/10/2026: "API_ERROR_502" vermelho no popup só porque a consulta caiu no meio de um deploy).
+  if ([502, 503, 504].includes(response.status) && !(options.body instanceof FormData)) {
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+    response = await doFetch();
+  }
   // O portal recusa trabalho de extensão mais velha que a que ele distribui (ver extension-version.ts no servidor).
   if (response.status === 426) {
     const { esperada } = await response.json().catch(() => ({}));

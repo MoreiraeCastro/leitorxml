@@ -168,7 +168,7 @@ try {
   Start-Process $chrome 'chrome://extensions'
 } catch { }
 $nl = [Environment]::NewLine
-$depois = $nl + $nl + 'Daqui pra frente a extensão se atualiza sozinha (ou pelo botão "Atualizar extensão" no popup): não precisa mais rodar este instalador.'
+$depois = $nl + $nl + 'IMPORTANTE: depois disso, feche o Chrome por completo (todas as janelas e, se houver, o ícone perto do relógio → Sair) e abra de novo. Só assim ele enxerga o atualizador.' + $nl + $nl + 'Daqui pra frente a extensão se atualiza sozinha (ou pelo botão "Atualizar extensão" no popup): não precisa mais rodar este instalador.'
 if ($jaExistia) {
   Aviso ('Extensão atualizada.' + $nl + $nl + 'No Chrome (página Extensões), clique na setinha circular de recarregar, no cartão "Leitor de XML".' + $depois) 'Information'
 } else {
