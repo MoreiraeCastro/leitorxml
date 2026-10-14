@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 /** Próxima empresa com solicitações já feitas (SOLICITADO / PROCESSANDO_SEFAZ) para a extensão conferir na aba Solicitações e baixar o que estiver pronto. */
 export async function GET(request: Request) {
   const db = createAdminClient();
-  const identity = await resolveExtensionToken(db, request.headers.get("authorization"));
+  const identity = await resolveExtensionToken(db, request.headers.get("authorization"), request.headers.get("x-leitor-versao"));
   if (!identity) return NextResponse.json({ error: "Token inválido ou revogado." }, { status: 401 });
   const outdated = await rejectOutdatedExtension(request);
   if (outdated) return outdated;

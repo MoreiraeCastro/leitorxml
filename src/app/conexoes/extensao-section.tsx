@@ -5,12 +5,12 @@ import { ExtensionTokenGenerator } from "@/components/extension-token-generator"
 import { ExtensionPairing } from "@/components/extension-pairing";
 import { revogarToken } from "../extensao/actions";
 
-type TokenRow = { id: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null };
+type TokenRow = { id: string; label: string | null; created_at: string; last_used_at: string | null; revoked_at: string | null; ultima_versao: string | null };
 const fmt = (value: string | null) => (value ? new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "Nunca");
 
 export async function ExtensaoSection() {
   const db = await requireOfficeDataClient();
-  const { data: tokens } = await db.from("xml_leitor_extension_tokens").select("id,label,created_at,last_used_at,revoked_at").order("created_at", { ascending: false });
+  const { data: tokens } = await db.from("xml_leitor_extension_tokens").select("id,label,created_at,last_used_at,revoked_at,ultima_versao").order("created_at", { ascending: false });
   const rows = (tokens as TokenRow[] | null) ?? [];
   const active = rows.filter((row) => !row.revoked_at);
 
@@ -36,16 +36,18 @@ export async function ExtensaoSection() {
               <tr className="border-b border-black/10 text-left text-xs text-black/50">
                 <th className="py-2 pr-4 font-medium">Nome</th>
                 <th className="py-2 pr-4 font-medium">Criada</th>
+                <th className="py-2 pr-4 font-medium">Versão</th>
                 <th className="py-2 pr-4 font-medium">Último uso</th>
                 <th className="py-2" />
               </tr>
             </thead>
             <tbody>
-              {!active.length && <tr><td colSpan={4} className="py-4 text-black/50">Nenhuma conexão ativa.</td></tr>}
+              {!active.length && <tr><td colSpan={5} className="py-4 text-black/50">Nenhuma conexão ativa.</td></tr>}
               {active.map((row) => (
                 <tr key={row.id} className="border-b border-black/5 last:border-0">
                   <td className="py-2 pr-4">{row.label ?? "Token manual"}</td>
                   <td className="py-2 pr-4 text-black/60">{fmt(row.created_at)}</td>
+                  <td className="py-2 pr-4 text-black/60">{row.ultima_versao ?? "—"}</td>
                   <td className="py-2 pr-4 text-black/60">{fmt(row.last_used_at)}</td>
                   <td className="py-2 text-right">
                     <form action={revogarToken}>

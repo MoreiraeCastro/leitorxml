@@ -33,7 +33,12 @@ export function extractBearerToken(authorizationHeader: string | null) {
 export type ExtensionIdentity = { userId: string; displayName: string; role: "SUPER_ADMIN" | "OFFICE_STAFF" };
 
 /** Valida o token da extensão e confirma que quem o gerou ainda é staff ativo — token de alguém desligado/rebaixado para de funcionar mesmo sem ser revogado explicitamente. */
-export async function resolveExtensionToken(db: SupabaseClient, authorizationHeader: string | null): Promise<ExtensionIdentity | null> {
+export async function resolveExtensionToken(
+  db: SupabaseClient,
+  authorizationHeader: string | null,
+  /** Cabeçalho X-Leitor-Versao: quando vem, fica gravado no token — mostra a versão que cada PC está rodando. */
+  extensionVersion?: string | null,
+): Promise<ExtensionIdentity | null> {
   const token = extractBearerToken(authorizationHeader);
   if (!token) return null;
   const { data: tokenRow, error } = await db
@@ -52,6 +57,11 @@ export async function resolveExtensionToken(db: SupabaseClient, authorizationHea
     .maybeSingle();
   if (membershipError || !membership) return null;
   const { data: profile } = await db.from("profiles").select("full_name").eq("user_id", tokenRow.user_id).maybeSingle();
-  await db.from("xml_leitor_extension_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", tokenRow.id);
+  const now = new Date().toISOString();
+  const version = extensionVersion?.trim().slice(0, 20);
+  await db
+    .from("xml_leitor_extension_tokens")
+    .update(version ? { last_used_at: now, ultima_versao: version, ultima_versao_at: now } : { last_used_at: now })
+    .eq("id", tokenRow.id);
   return { userId: tokenRow.user_id, displayName: profile?.full_name ?? "Colaborador", role: membership.role as "SUPER_ADMIN" | "OFFICE_STAFF" };
 }
