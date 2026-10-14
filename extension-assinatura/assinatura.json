@@ -1,10 +1,10 @@
 {
-  "versao": "0.1.12",
-  "commit": "47c1f88",
+  "versao": "0.1.13",
+  "commit": "f334770",
   "arquivos": [
     {
       "caminho": "manifest.json",
-      "sha256": "47cf5f5b5a4f39a6d00fdefd689796764e6b89a192c4c19b2f5dff8b209aff86"
+      "sha256": "5cde9c160b85db6873da73ac4614dfff92b019798bb1a0433682080f4d1ba6f7"
     },
     {
       "caminho": "popup/popup.html",
@@ -16,7 +16,7 @@
     },
     {
       "caminho": "src/background.js",
-      "sha256": "08485090dd9a87d9e8cf479fe305d4f3a34fb74e5385db88425492fb37f3a286"
+      "sha256": "6b8f295704377b9b2a82390ef8efaecc8d75c1c2f5cdac294c5a543078876e3d"
     },
     {
       "caminho": "src/content-fisco.js",
@@ -24,7 +24,7 @@
     },
     {
       "caminho": "src/content-home.js",
-      "sha256": "d998b5b552b09df95a5f6edb4b79aac7027c228ea1adb7629097854ea54ff88a"
+      "sha256": "6c061c1e2c2e772c4fa63645f005637362f43e04d96876eeccd7b13e95c91dd2"
     },
     {
       "caminho": "src/content-portal.js",
@@ -35,5 +35,5 @@
       "sha256": "914b303feb81700b580d1f2adbca3d03e28f9568f6b7e9bea8016eaf7be7a85d"
     }
   ],
-  "assinatura": "fTWw6lxo2wIjS1jKTJCkNWfotHpQ3UchXClMTmr6nBGEYJysfglQlEReXeMCbQwkY+/SJabBZi69lJiQ/HmMIXN/T4+0EtuZDkdyMu8OhUGj0o2Akg94CBIy783gUbnKpwNVtCSPYgC3apgVQumat+cW4puLNpvZTr/YjoMMev12vcd0Il6iZiAgwCDnw+EjBI+01HSOgNcDNVn4VKvZXVlVfEr1UIzb/MIZa6WQ9frHEon/HQe/EGb1mK2L63sPe8Yjuy+ZGJZSk3o2cAMlANqNU+OU/ATsXBR3rpgwuSeeXxPFGwq3rJSf76e5KS9166hHJQ4irmD4UElWOqJpU56Tb5G8hP9Q6AIDjI23xXX5/R8isNoVGuqw6MPr6jGp66f4ImoQL7Y+Z42V4ros56qckTYGCqfcLpiojhr2bPa5Iu6XtUUgE2kua2R9EPeXhPHgTxkURD0LouxT/Mah4EXlCMDwP2CFnkhaIgdQfs0c5EN3ER1W4C2ab5HcoGgr"
+  "assinatura": "o3IeWm5OooYg7ph4+5yjBU9Rjq0iez4sHicioTDDMvjpdfRHDlETaOzLLqBFldSJaSB64ghzOLCREnYhT0iamjOVZTNSRKR5oO+LELC3wXuNOvaTQMBSl1xh7mJ/N5MPiHJyeEdAlLmXh0rzjgUiMgAtCOWQDd32H02rlopL2Y6v0K/29DmFVxDNoiqTK+mYjGEZq3leapHUifudq/bpYDGJjjOhAjmHdT6Q5mUxQ/29SWRVITwCmGGtXYLe7miFMtBcj6gSKv08ECFox1Xtvn5sLBMccU/8rfP+LQKVmmkLJXzhu8GAIw5+VIFGSlOWIqtQeLIgUeEafTGZrq7W4O+baKnp5f/8e6OvbfjdOZ9qJTniCvSJewkEFuFmlsf4a+EoP7uDlkSFrL40rVTJiSORpEcA+ZfzkB2aGFhbyhZlw7jSk+en6J/kIFFXFNZ7y/ST9B38m58EuoMe5sB1MUDkFNqRe+c9MzcpESCag3tbUNSr1ths5VqAVJW9cap7"
 }
