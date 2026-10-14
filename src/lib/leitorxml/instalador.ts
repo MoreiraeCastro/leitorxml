@@ -38,9 +38,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $base = '${baseUrl}'
 $chavePublica = '${publicKeyXml}'
-$raiz = Split-Path -Parent $PSCommandPath
-$pasta = Join-Path $raiz 'LeitorXML'
-$log = Join-Path $raiz 'LeitorXML-atualizador.log'
+# O atualizador mora em C:\LeitorXML-atualizador (usuário comum não pode criar ARQUIVOS na raiz do C:, só pastas);
+# a extensão fica na pasta irmã, C:\LeitorXML.
+$dirAtualizador = Split-Path -Parent $PSCommandPath
+$pasta = Join-Path (Split-Path -Parent $dirAtualizador) 'LeitorXML'
+$log = Join-Path $dirAtualizador 'atualizador.log'
 function Log($m) {
   Add-Content -LiteralPath $log -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $m)
   $linhas = @(Get-Content -LiteralPath $log)
@@ -126,10 +128,12 @@ try {
   if (-not (Test-Path (Join-Path $pasta 'manifest.json'))) { throw 'Os arquivos da extensão não foram extraídos.' }
 
   # Atualizador: ao lado da pasta (ela é trocada a cada versão), registrado no Chrome só para esta extensão.
-  $atualizador = Join-Path $raiz 'LeitorXML-atualizador.ps1'
+  $dirAtualizador = Join-Path $raiz 'LeitorXML-atualizador'
+  New-Item -ItemType Directory -Path $dirAtualizador -Force | Out-Null
+  $atualizador = Join-Path $dirAtualizador 'atualizador.ps1'
   [IO.File]::WriteAllBytes($atualizador, [Convert]::FromBase64String($atualizadorB64))
-  $host_bat = Join-Path $raiz 'LeitorXML-atualizador.bat'
-  Set-Content -LiteralPath $host_bat -Encoding ASCII -Value ('@echo off' + [Environment]::NewLine + 'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0LeitorXML-atualizador.ps1" %*')
+  $host_bat = Join-Path $dirAtualizador 'atualizador.bat'
+  Set-Content -LiteralPath $host_bat -Encoding ASCII -Value ('@echo off' + [Environment]::NewLine + 'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0atualizador.ps1" %*')
   $caminhoPasta = (Get-Item -LiteralPath $pasta).FullName
   $caminhoPasta = $caminhoPasta.Substring(0, 1).ToUpper() + $caminhoPasta.Substring(1)
   $ids = @(IdDaPasta $caminhoPasta)
@@ -142,7 +146,7 @@ try {
       }
     } catch { }
   }
-  $hostManifest = Join-Path $raiz 'LeitorXML-atualizador.json'
+  $hostManifest = Join-Path $dirAtualizador 'atualizador.json'
   $origens = @($ids | Select-Object -Unique | ForEach-Object { 'chrome-extension://' + $_ + '/' })
   @{ name = '${NATIVE_HOST_NAME}'; description = 'Atualizador do Leitor de XML'; path = $host_bat; type = 'stdio'; allowed_origins = $origens } | ConvertTo-Json | Set-Content -LiteralPath $hostManifest -Encoding ASCII
   if (-not $quiet) {
