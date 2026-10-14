@@ -56,9 +56,25 @@ function readContribuinteRows() {
  * enquanto houver "Próxima página", e ao esgotar avisa o background pra
  * seguir pra próxima procuração da fila.
  */
-async function sweepCurrentPage(run) {
+async function sweepCurrentPage(run, firstPage = true) {
   const current = run.sweepQueue[run.sweepCursor];
-  for (const row of readContribuinteRows()) {
+  const rows = readContribuinteRows();
+  if (firstPage) {
+    // A varredura de 30/09 anotou empresas 1–2 procurações DEPOIS da real: a lista lida ainda era a da procuração
+    // anterior (o Fisco não tinha trocado a tela). Lista idêntica à da procuração anterior = tela velha — não anota.
+    const signature = rows.map((row) => row.cnpj).sort().join(",");
+    const previous = run.sweepLastSignature;
+    if (signature && previous && previous.posicao !== current.posicao && previous.signature === signature) {
+      if ((run.sweepRetries ?? 0) < 2) {
+        note(`lista igual à da procuração ${previous.posicao} — tela ainda não trocou, abrindo ${current.posicao} de novo`);
+        await chrome.runtime.sendMessage({ type: "SWEEP_RETRY_POSITION" });
+        return;
+      }
+      note(`lista continua igual à da procuração ${previous.posicao} depois de 2 tentativas — aceitando`);
+    }
+    await setRunFlag({ sweepLastSignature: { posicao: current.posicao, signature } });
+  }
+  for (const row of rows) {
     if (row.situacaoCadastral === "Baixada") continue;
     await chrome.runtime.sendMessage({ type: "REGISTER_ESTABLISHMENT", ...row, procuracaoGrupo: current.grupo, posicao: current.posicao });
   }
@@ -69,7 +85,7 @@ async function sweepCurrentPage(run) {
     await waitForAjaxIdle({ label: "AJAX da próxima página da lista de empresas" });
     // A tabela é recriada via AJAX a cada página — mesma cautela do clique de linha (ver realClick em dom-utils.js).
     await new Promise((resolve) => setTimeout(resolve, 400));
-    await sweepCurrentPage(run);
+    await sweepCurrentPage(run, false);
     return;
   }
 

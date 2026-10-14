@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Leitor de XML — Fisco Fácil",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Coleta em lote de NF-e/NFC-e do Fisco Fácil (SEFAZ-RJ) para o escritório Moreira & Castro.",
   "permissions": ["storage", "downloads", "scripting", "debugger", "alarms", "nativeMessaging"],
   "host_permissions": [

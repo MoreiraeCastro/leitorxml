@@ -1296,8 +1296,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: true, done: true });
             break;
           }
-          await setActiveRun({ ...run, sweepCursor: nextCursor });
+          await setActiveRun({ ...run, sweepCursor: nextCursor, sweepRetries: 0 });
           // Mesmo motivo da descoberta: Página Principal do zero, não pelo "voltar" (bfcache).
+          const [tab] = sender.tab ? [sender.tab] : await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
+          if (tab) await navigateToHome(tab.id);
+          sendResponse({ ok: true });
+          break;
+        }
+        case "SWEEP_RETRY_POSITION": {
+          // A lista lida era a da procuração anterior (tela velha) — reabre a MESMA posição pela Página Principal.
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          await setActiveRun({ ...run, sweepRetries: (run.sweepRetries ?? 0) + 1 });
           const [tab] = sender.tab ? [sender.tab] : await chrome.tabs.query({ url: "https://fisco-facil.fazenda.rj.gov.br/*", active: true });
           if (tab) await navigateToHome(tab.id);
           sendResponse({ ok: true });
