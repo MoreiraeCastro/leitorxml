@@ -1,10 +1,10 @@
 {
-  "versao": "0.1.9",
-  "commit": "07f414f",
+  "versao": "0.1.10",
+  "commit": "b653218",
   "arquivos": [
     {
       "caminho": "manifest.json",
-      "sha256": "dd19374a1e57dc300cea3a9f65f500cf8f30efedd4a3a1cfc730ed5b3f197926"
+      "sha256": "80c36eedbe03b6d19c7fe8053205a625c3d7687b8516b728ecf3a37dc5792e70"
     },
     {
       "caminho": "popup/popup.html",
@@ -16,11 +16,11 @@
     },
     {
       "caminho": "src/background.js",
-      "sha256": "f3f88c2353e06883057638fdd03520cf31d5dbaf21765ab5034fb6528ba614c4"
+      "sha256": "9a90c2c2948ca6459637a2385af6f985e7f670520d082bfb445fb7b6019007c2"
     },
     {
       "caminho": "src/content-fisco.js",
-      "sha256": "af8065195f101a200df414d92a18ebabd7570617b2c6dd5e94326d16801d71ce"
+      "sha256": "badc827db203f9ba5fc93828a49e0355ac88cc18dc2fb5a2134a55d1ef05e1c5"
     },
     {
       "caminho": "src/content-home.js",
@@ -35,5 +35,5 @@
       "sha256": "c97d49702334567f4044a8549960dc3612ad20dcd7fdbc02960e14d82067f2de"
     }
   ],
-  "assinatura": "Rg7+kGneu58R3pnjpC+X/H+yz85cSxQ/hquyZi+1RrJhgRDYbO/TDwq+MSbbnKK8cVnouExi1sv+pCfskvlGOCvmZ7KNZPR6Ye/fZLco0koBPsLXVuTpbiDAbdAzN4q5SYqOS07bT0x6uNq3czS8uEha6UovQNGPUjVmkycX0/egqxQMN24h5WMK4L7pccmrIupJmWttAJYeqGsYR3n/znO31v9GW6mDsm9kLSmjv5IluRlnO5ZWqLx46239Kiawpn2xXVITO1fAiamvjhzzSV/XSegodOhYBVLCyhNx0RBrKe3Q3BWsWTD3yFeHnNeQ5mA39mg8DmCawUg0Mb3wmUVVSwulwQVaGzFY78VHOfPHKzxBJOg3uhwOd2Oj/GKIlFqUvm+J5Pw4xkfNcxDIdfv6q8xH1BzdPPmA6N9A28m+cGBBQ/GNOyeeMzzWqQvWBQi97amqjo8nkU0UZAeniGlQlfAzxo0VicM/Uke4T4vIsot5BIQVWnpwtxgwWqId"
+  "assinatura": "baRhg/HklEx0xfX92czQjTJhM66fcv+P9zPPFcGbkjhBhIDEihOHCqx+V0NDJiZwF0xL4+ML7+cAsfb7BO6SzWCU+IuJy/Woch8nY2JZUVqCATK1AxXjVh8dewuVIRApmWNs4uzZ2wYqY7M8NAIqoOcEtzq0EP9HLmOEVW5YB2SV/oRRgkOr07Z5rS22M+phMAocLdKyvBmvhgZD4A4sxfHgVHt+oNo+JasQJo6MK4IpvxYnvSO32O9GsiZvTMQlEHjQe3FSzBUa9VtdTexWgzOtvgeAgPqVPeB0HXT5BKYrYXvMQVsX1ZupwUrRZy/JZifysHOvKC6SoIPe4zjlo3zcMopd2fmtYmx5rxqbKwhnuY5x/flpihUQv21H94+uo8DRo6qDEKHbJLxgkiLjStRcK5i53wDANr5GtMj2PXFJiJs2pxWlAxKX2dMIILV1D6oax3IsAyAK9/vzNnTVHMuGKJMSnpVVzFinu6nYW4BMG0EgDOKfHa8F82YOyjmN"
 }
