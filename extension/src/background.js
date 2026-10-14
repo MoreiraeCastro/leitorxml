@@ -72,6 +72,19 @@ chrome.alarms.get(SELF_UPDATE_ALARM).then((alarm) => {
 });
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create(`${SELF_UPDATE_ALARM}-soon`, { delayInMinutes: 1 }));
 
+// Acabou de se atualizar: o aviso "EXTENSAO_DESATUALIZADA" da consulta anterior ficava vermelho no popup mesmo já na
+// versão nova (visto em 14/10/2026, logo após a 1ª atualização automática). Limpa e confere logo o que há para fazer.
+chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
+  if (reason !== "update") return;
+  const version = chrome.runtime.getManifest().version;
+  trail(`extensão atualizada de ${previousVersion} para ${version}`);
+  const { autoTrack } = await chrome.storage.local.get("autoTrack");
+  if (autoTrack?.state === "ERRO" && /DESATUALIZADA/.test(autoTrack.message ?? "")) await setAutoStatus({ state: "MANUAL" });
+  const { lastSweepError } = await chrome.storage.session.get("lastSweepError");
+  if (/DESATUALIZADA/.test(lastSweepError ?? "")) await chrome.storage.session.remove("lastSweepError");
+  chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 });
+});
+
 function isNewerVersion(a, b) {
   const pa = String(a).split(".").map(Number);
   const pb = String(b).split(".").map(Number);
