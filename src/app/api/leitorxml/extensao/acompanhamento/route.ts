@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
+import { rejectOutdatedExtension } from "@/lib/leitorxml/extension-version";
 import { claimNextTrackingBatch } from "@/lib/leitorxml/tasks";
 
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ export async function GET(request: Request) {
   const db = createAdminClient();
   const identity = await resolveExtensionToken(db, request.headers.get("authorization"));
   if (!identity) return NextResponse.json({ error: "Token inválido ou revogado." }, { status: 401 });
+  const outdated = await rejectOutdatedExtension(request);
+  if (outdated) return outdated;
   try {
     const exclude = (new URL(request.url).searchParams.get("exclude") ?? "")
       .split(",")

@@ -49,7 +49,7 @@ function describeLastNote(lastNote) {
   return `Último passo (${ago}): ${lastNote.step}`;
 }
 
-function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, apiBaseUrl, autoEnabled, lastNote }) {
+function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, apiBaseUrl, autoEnabled, lastNote, versionInfo }) {
   const headline = deriveHeadline({ run, belt, auto, hasToken, lastSweepError });
   $("statusCard").className = `status ${headline.tone}`;
   const title = $("statusTitle");
@@ -90,13 +90,18 @@ function render({ run, belt, auto, hasToken, lastSweepError, connectionStatus, a
     : "aba não detectada";
   connection.append(label, value);
 
+  const current = chrome.runtime.getManifest().version;
+  $("versionInfo").textContent = versionInfo?.latest && versionInfo.latest !== current
+    ? `Versão nova ${versionInfo.latest} disponível (esta é a ${current})`
+    : `Versão ${current} · confere e instala se houver nova`;
+
   $("portalLink").href = `${apiBaseUrl.replace(/\/$/, "")}/painel`;
   $("updated").textContent = auto?.at ? `Verificado às ${new Date(auto.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "";
 }
 
 let inputsLoaded = false;
 async function load() {
-  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder"]);
+  const local = await chrome.storage.local.get(["apiBaseUrl", "apiToken", "autoTrack", "autoTrackEnabled", "robotMode", "autoRequestEnabled", "deliverToFolder", "versionInfo"]);
   const apiBaseUrl = local.apiBaseUrl ?? "https://portalmoreiraecastro.com.br/leitorxml";
   // Só preenche os campos na 1ª vez: o popup se atualiza sozinho e não pode apagar o que a pessoa está digitando.
   if (!inputsLoaded) {
@@ -109,8 +114,17 @@ async function load() {
   }
   const { run } = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_RUN" });
   const { lastSweepError, belt, connectionStatus, lastNote } = await chrome.storage.session.get(["lastSweepError", "belt", "connectionStatus", "lastNote"]);
-  render({ run, belt, auto: local.autoTrack, hasToken: Boolean(local.apiToken), lastSweepError, connectionStatus, apiBaseUrl, autoEnabled: local.autoTrackEnabled ?? true, lastNote });
+  render({ run, belt, auto: local.autoTrack, hasToken: Boolean(local.apiToken), lastSweepError, connectionStatus, apiBaseUrl, autoEnabled: local.autoTrackEnabled ?? true, lastNote, versionInfo: local.versionInfo });
 }
+
+$("updateExtension").addEventListener("click", async () => {
+  say("Procurando versão nova…");
+  const response = await chrome.runtime.sendMessage({ type: "UPDATE_EXTENSION" });
+  if (!response?.ok) say(response?.error ?? "Não foi possível atualizar.");
+  else if (response.reloading) say(`Atualizada para ${response.to}. Reiniciando a extensão…`);
+  else say(`Já está na versão mais nova (${response.current}).`);
+  await load();
+});
 
 $("save").addEventListener("click", async () => {
   await chrome.storage.local.set({ apiBaseUrl: urlInput.value.trim(), apiToken: tokenInput.value.trim() });

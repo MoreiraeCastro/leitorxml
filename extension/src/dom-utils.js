@@ -25,6 +25,7 @@ function note(step) {
   // Guarda o último passo fora da página: o vigia do service worker usa isto pra dizer ONDE a corrida
   // parou quando ela trava sem reportar nada (o rastro em memória some junto com a página).
   chrome.storage.session.set({ lastNote: { step, path: location.pathname, at: Date.now() } }).catch(() => {});
+  chrome.runtime.sendMessage({ type: "TRAIL", text: step, path: location.pathname.split("/").pop() }).catch(() => {});
 }
 
 /** Monta o texto de diagnóstico (rastro de passos + erros JS da página) pra anexar numa mensagem de falha. */

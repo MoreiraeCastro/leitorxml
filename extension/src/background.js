@@ -60,14 +60,142 @@ async function openCompanyPage(tabId) {
  * permissão "debugger" e mostra a barra "está depurando este navegador"
  * enquanto anexado — por isso desanexa (`detach`) logo depois de clicar.
  */
-async function dispatchRealClick(tabId, x, y) {
-  await chrome.debugger.attach({ tabId }, "1.3");
+// ---------- Atualização da extensão ----------
+// Uma extensão não troca os próprios arquivos: quem troca é o atualizador que o instalador deixou no PC, chamado por
+// mensagens nativas (só esta extensão pode chamá-lo). Ele baixa o pacote, confere a assinatura e substitui a pasta; aqui
+// a extensão só pergunta a versão ao portal, chama o atualizador e se recarrega — nunca no meio de uma esteira.
+const NATIVE_UPDATER = "br.com.moreiraecastro.leitorxml"; // = NATIVE_HOST_NAME em src/lib/leitorxml/instalador.ts
+const SELF_UPDATE_ALARM = "self-update";
+const SELF_UPDATE_RETRY_MS = 30 * 60 * 1000;
+chrome.alarms.get(SELF_UPDATE_ALARM).then((alarm) => {
+  if (!alarm) chrome.alarms.create(SELF_UPDATE_ALARM, { delayInMinutes: 1, periodInMinutes: 30 });
+});
+chrome.runtime.onStartup.addListener(() => chrome.alarms.create(`${SELF_UPDATE_ALARM}-soon`, { delayInMinutes: 1 }));
+
+function isNewerVersion(a, b) {
+  const pa = String(a).split(".").map(Number);
+  const pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  }
+  return false;
+}
+
+async function latestPublishedVersion() {
+  const { apiBaseUrl } = await getSettings();
+  const response = await fetch(`${apiBaseUrl}/api/leitorxml/extensao/versao`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`VERSAO_INDISPONIVEL_${response.status}`);
+  return (await response.json()).version;
+}
+
+/** `manual` = botão do popup: tenta mesmo sem versão nova anunciada e informa o erro; automático só age quando é seguro. */
+async function selfUpdate({ manual = false } = {}) {
+  const current = chrome.runtime.getManifest().version;
+  const latest = await latestPublishedVersion().catch(() => null);
+  await chrome.storage.local.set({ versionInfo: { current, latest, at: Date.now() } });
+  const outdated = Boolean(latest && isNewerVersion(latest, current));
+  if (!manual && !outdated) return { ok: true, current, latest };
+  if ((await getActiveRun()) || (await getBelt())?.active) {
+    return manual ? { ok: false, error: "Tem uma esteira rodando — espere terminar (ou pare) e clique de novo." } : { ok: true, deferred: true };
+  }
+  const { lastSelfUpdate } = await chrome.storage.local.get("lastSelfUpdate");
+  // Evita laço: se já tentou esta versão há pouco e continuou velha (ex.: extensão carregada de outra pasta), espera.
+  if (!manual && lastSelfUpdate?.version === latest && Date.now() - lastSelfUpdate.at < SELF_UPDATE_RETRY_MS) return { ok: true, deferred: true };
+  await chrome.storage.local.set({ lastSelfUpdate: { version: latest, at: Date.now() } });
+  let result;
   try {
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    result = await withTimeout(chrome.runtime.sendNativeMessage(NATIVE_UPDATER, { acao: "atualizar" }), "atualizador", 180000);
+  } catch (error) {
+    const message = /not found|specified native messaging host/i.test(error.message)
+      ? "O atualizador não está instalado neste PC: rode o instalador uma vez (portal → Conexões → Extensão)."
+      : `O atualizador falhou: ${error.message}`;
+    trail(`atualização: ${message}`);
+    return { ok: false, error: message };
+  }
+  if (!result?.ok) {
+    trail(`atualização recusada: ${result?.erro ?? "sem resposta"}`);
+    return { ok: false, error: `Não atualizou: ${result?.erro ?? "o atualizador não respondeu"}` };
+  }
+  const onDisk = result.para ?? result.versao;
+  if (onDisk && onDisk !== current) {
+    trail(`atualização: ${current} → ${onDisk}, recarregando`);
+    setTimeout(() => chrome.runtime.reload(), 800); // depois de responder ao popup
+    return { ok: true, reloading: true, from: current, to: onDisk };
+  }
+  return { ok: true, current, latest };
+}
+
+// ---------- Rastro da corrida ----------
+// Os passos de cada página (note() nos content scripts), as navegações da aba de trabalho e os eventos do background,
+// com horário, num só lugar. Vai anexado a toda falha/devolução: sem isso, uma corrida que parava sem registrar nada
+// não deixava pista nenhuma (13–14/10/2026).
+const TRAIL_MAX = 40;
+let trailWrite = Promise.resolve();
+function trail(text) {
+  const entry = { at: Date.now(), text: String(text).slice(0, 200) };
+  trailWrite = trailWrite
+    .then(async () => {
+      const { runTrail = [] } = await chrome.storage.session.get("runTrail");
+      await chrome.storage.session.set({ runTrail: [...runTrail, entry].slice(-TRAIL_MAX) });
+    })
+    .catch(() => {});
+  return trailWrite;
+}
+
+/** Rastro desde `since` em texto curto ("hh:mm:ss texto > ..."), pra anexar a uma mensagem de falha. */
+async function describeTrail(since = 0, maxChars = 1800) {
+  await trailWrite;
+  const { runTrail = [] } = await chrome.storage.session.get("runTrail");
+  const fmt = (at) => new Date(at).toLocaleTimeString("pt-BR", { hour12: false });
+  const text = runTrail.filter((entry) => entry.at >= since - 1000).map((entry) => `${fmt(entry.at)} ${entry.text}`).join(" > ");
+  return text.length > maxChars ? `…${text.slice(-maxChars)}` : text;
+}
+
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  if (!change.status && !change.url) return;
+  const url = change.url ?? tab.url ?? "";
+  if (!/fazenda\.rj\.gov\.br/.test(url)) return;
+  trail(`aba ${tabId}: ${change.status ?? "url"} ${url.replace(/^https:\/\//, "").split("?")[0]}`);
+});
+
+/**
+ * Nenhuma chamada ao depurador pode ficar pendurada: uma corrida que esperava um clique/digitação real sem resposta
+ * ficava muda até o vigia derrubar ("nenhum passo registrado", visto ao vivo várias vezes em 13–14/10/2026). Com
+ * limite, vira um erro com nome, reportado na hora.
+ */
+const DEBUGGER_TIMEOUT_MS = 10000;
+function withTimeout(promise, label, ms = DEBUGGER_TIMEOUT_MS) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`DEPURADOR_SEM_RESPOSTA: ${label} (${ms / 1000}s)`)), ms))),
+  ]);
+}
+
+/** Anexa o depurador; se uma sessão antiga ficou presa na aba (service worker reiniciado no meio), solta e tenta de novo. */
+async function attachDebugger(tabId) {
+  try {
+    await withTimeout(chrome.debugger.attach({ tabId }, "1.3"), "attach");
+  } catch (error) {
+    if (!/already attached/i.test(error.message)) throw error;
+    trail(`depurador já anexado na aba — soltando a sessão antiga`);
+    await withTimeout(chrome.debugger.detach({ tabId }), "detach da sessão antiga").catch(() => {});
+    await withTimeout(chrome.debugger.attach({ tabId }, "1.3"), "attach (2ª tentativa)");
+  }
+}
+
+async function debuggerCommand(tabId, method, params) {
+  return withTimeout(chrome.debugger.sendCommand({ tabId }, method, params), method);
+}
+
+async function dispatchRealClick(tabId, x, y) {
+  await attachDebugger(tabId);
+  try {
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
   } finally {
-    await chrome.debugger.detach({ tabId }).catch(() => {});
+    await withTimeout(chrome.debugger.detach({ tabId }), "detach").catch(() => {});
   }
 }
 
@@ -80,11 +208,11 @@ async function dispatchRealClick(tabId, x, y) {
  * (o content script chama `.focus()` antes de mandar a mensagem).
  */
 async function dispatchRealType(tabId, text) {
-  await chrome.debugger.attach({ tabId }, "1.3");
+  await attachDebugger(tabId);
   try {
-    await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text });
+    await debuggerCommand(tabId, "Input.insertText", { text });
   } finally {
-    await chrome.debugger.detach({ tabId }).catch(() => {});
+    await withTimeout(chrome.debugger.detach({ tabId }), "detach").catch(() => {});
   }
 }
 
@@ -193,8 +321,14 @@ async function apiFetch(path, options = {}) {
   if (!apiToken) throw new Error("SEM_TOKEN_CONFIGURADO");
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
-    headers: { ...(options.headers ?? {}), Authorization: `Bearer ${apiToken}` },
+    headers: { ...(options.headers ?? {}), Authorization: `Bearer ${apiToken}`, "X-Leitor-Versao": chrome.runtime.getManifest().version },
   });
+  // O portal recusa trabalho de extensão mais velha que a que ele distribui (ver extension-version.ts no servidor).
+  if (response.status === 426) {
+    const { esperada } = await response.json().catch(() => ({}));
+    chrome.alarms.create(`${SELF_UPDATE_ALARM}-soon`, { delayInMinutes: 0.1 }); // tenta se atualizar já
+    throw new Error(`EXTENSAO_DESATUALIZADA: este PC está com a versão ${chrome.runtime.getManifest().version} e o portal pede a ${esperada ?? "mais nova"}. Clique em “Atualizar extensão” (Mais opções).`);
+  }
   if (!response.ok) throw new Error(`API_ERROR_${response.status}`);
   return response;
 }
@@ -220,6 +354,10 @@ const TRACK_STALL_MS = 8 * 60 * 1000; // visita a uma empresa pode incluir vári
 const TRACK_IDLE_MS = 3 * 60 * 1000; // ...mas passar 3 min sem NENHUM passo novo é travamento (o teto de 8 min não cobria isso)
 chrome.alarms.create("run-watchdog", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === SELF_UPDATE_ALARM || alarm.name === `${SELF_UPDATE_ALARM}-soon`) {
+    await selfUpdate().catch(() => {});
+    return;
+  }
   if (alarm.name === AUTO_TRACK_ALARM || alarm.name === AUTO_TRACK_SOON_ALARM) {
     await maybeAutoTrack().catch((error) => setAutoStatus({ state: "ERRO", message: error.message }));
     return;
@@ -261,7 +399,14 @@ const PC_PROBLEM_MESSAGE =
   "O Fisco Fácil não carregou nesta aba (a sessão caiu ou o Chrome está esperando você escolher o certificado). Entre no Fisco Fácil com o certificado e clique em “Trabalhar agora” de novo — o pedido voltou para a fila.";
 
 async function stopBeltPcProblem(run) {
-  await apiFetch(`/api/leitorxml/extensao/tarefas/${run.taskId}/devolver`, { method: "POST" }).catch(() => {});
+  const tabId = await findWorkTabId();
+  const tab = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
+  const diagnostico = `aba ${tab ? `${tab.status} em ${String(tab.url).split("?")[0]} ("${String(tab.title ?? "").slice(0, 60)}")` : "não encontrada"}; rastro: ${await describeTrail(run.startedAt)}`;
+  await apiFetch(`/api/leitorxml/extensao/tarefas/${run.taskId}/devolver`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ diagnostico }),
+  }).catch(() => {});
   await clearActiveRun();
   await chrome.storage.session.set({ lastSweepError: PC_PROBLEM_MESSAGE });
   const belt = await getBelt();
@@ -371,7 +516,7 @@ let savingCopies = false;
 
 async function saveLocalCopies() {
   if (savingCopies) return { saved: 0, failed: 0, skipped: true };
-  const { deliverToFolder = false, localCopiesDone = [] } = await chrome.storage.local.get(["deliverToFolder", "localCopiesDone"]);
+  const { deliverToFolder = false, localCopiesDone = [], localCopiesSeeded = false } = await chrome.storage.local.get(["deliverToFolder", "localCopiesDone", "localCopiesSeeded"]);
   if (deliverToFolder) return { saved: 0, failed: 0, skipped: true };
   savingCopies = true;
   let saved = 0;
@@ -379,6 +524,12 @@ async function saveLocalCopies() {
   try {
     const { items } = await (await apiFetch("/api/leitorxml/extensao/acompanhamento/revisao")).json();
     const done = new Set(localCopiesDone);
+    // Instalação nova (ou extensão recarregada de outra pasta, que começa sem memória): o que já tem "Baixado ✓" está
+    // salvo em algum PC — não baixa tudo de novo (visto em 13/10/2026: uma leva inteira de ZIPs repetidos).
+    if (!localCopiesSeeded) {
+      for (const item of items) if (item.baixado) done.add(item.taskId);
+      await chrome.storage.local.set({ localCopiesSeeded: true });
+    }
     // Já salvos neste PC antes do check existir (ou cujo check falhou): marca agora, sem baixar de novo.
     for (const item of items.filter((candidate) => done.has(candidate.taskId) && !candidate.baixado)) await markBaixado(item.taskId);
     for (const item of items.filter((candidate) => !done.has(candidate.taskId)).slice(0, 25)) {
@@ -674,6 +825,7 @@ async function claimNextTaskAndPrepare(chainCount = 1, preferEstablishmentId = n
     chainCount,
   };
   await setActiveRun(run);
+  trail(`nova corrida: ${task.tipoDocumento}/${task.papel} de ${establishment.cnpj} (procuração ${accessContext?.grupo ?? "?"}/${accessContext?.posicao ?? "a descobrir"}, ${run.step})`);
   if (launch) await launchRun(run, tabId);
   return run;
 }
@@ -811,7 +963,8 @@ async function failActiveRun(run, motivo, tabId = null) {
     if (run.mode === "TRACK") await trackBeltOnFailure(run, motivo, tabId ?? (await findWorkTabId()));
     return;
   }
-  await reportFalha(run.taskId, motivo);
+  trail(`falha: ${motivo.slice(0, 120)}`);
+  await reportFalha(run.taskId, `${motivo.slice(0, 2000)} [Rastro: ${await describeTrail(run.startedAt)}]`);
   await beltOnFailure(tabId ?? (await findWorkTabId()), motivo);
 }
 
@@ -884,13 +1037,13 @@ async function captureDownloadViaCdp(tabId, x, y, taskId) {
     }
   };
 
-  await chrome.debugger.attach({ tabId }, "1.3");
+  await attachDebugger(tabId);
   chrome.debugger.onEvent.addListener(onEvent);
   try {
-    await chrome.debugger.sendCommand({ tabId }, "Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Response" }] });
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-    await chrome.debugger.sendCommand({ tabId }, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    await debuggerCommand(tabId, "Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Response" }] });
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "DOWNLOAD_NAO_CAPTURADO_EM_60S" }), 60000));
     const result = await Promise.race([finished, timeout]);
     if (!result.ok && result.error?.startsWith("DOWNLOAD_NAO_CAPTURADO")) {
@@ -900,8 +1053,8 @@ async function captureDownloadViaCdp(tabId, x, y, taskId) {
     return result;
   } finally {
     chrome.debugger.onEvent.removeListener(onEvent);
-    await chrome.debugger.sendCommand({ tabId }, "Fetch.disable").catch(() => {});
-    await chrome.debugger.detach({ tabId }).catch(() => {});
+    await debuggerCommand(tabId, "Fetch.disable").catch(() => {});
+    await withTimeout(chrome.debugger.detach({ tabId }), "detach").catch(() => {});
   }
 }
 
@@ -1292,6 +1445,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "ENSURE_PAGE_GLOBALS": {
           if (!sender.tab) return sendResponse({ ok: false, error: "SEM_ABA_REMETENTE" });
           await ensurePageGlobals(sender.tab.id);
+          sendResponse({ ok: true });
+          break;
+        }
+        case "UPDATE_EXTENSION": {
+          sendResponse(await selfUpdate({ manual: true }));
+          break;
+        }
+        case "TRAIL": {
+          await trail(`${message.path ?? ""}: ${message.text}`);
           sendResponse({ ok: true });
           break;
         }

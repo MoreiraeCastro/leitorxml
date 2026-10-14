@@ -593,6 +593,8 @@ async function fillAndSubmitExtractionForm(run) {
   const run = await getActiveRun();
   if (!run) return;
   reportingTaskId = run.taskId;
+  // Prova de vida: a página carregou e a extensão rodou nela (sem isso, o vigia entende que a página nem carregou).
+  note("página carregada");
 
   if (runExpired(run)) {
     await reportFailure(`RUN_EXPIRADO: mais de ${Math.round((Date.now() - run.startedAt) / 1000)}s sem terminar — provavelmente travou silenciosamente numa espera interrompida por um reload.`);
