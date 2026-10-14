@@ -102,7 +102,9 @@ async function enterProcuracao(grupo, posicao) {
     }
     await realNavigationClick(match.element);
     await new Promise((resolve) => setTimeout(resolve, 20000));
-    note(`clique na procuração ${posicao} não abriu nada em 20s (tentativa ${attempt})`);
+    const modalAberto = document.getElementById("modalAutorizacoes")?.classList.contains("show");
+    const overlay = [...document.querySelectorAll("[class*='loading'], .modal.show")].filter((el) => el.offsetParent !== null).map((el) => el.id || el.className.toString().slice(0, 40));
+    note(`clique na procuração ${posicao} não abriu nada em 20s (tentativa ${attempt}; modal aberto: ${modalAberto ? "sim" : "não"}; visíveis: ${overlay.join(", ") || "nada"}; XHRs: ${typeof describeXhrLog === "function" ? describeXhrLog() : "?"})`);
   }
   throw new Error(`PROCURACAO_NAO_ABRIU: grupo=${grupo} posicao=${posicao} — o clique no modal não levou à lista de empresas (2 tentativas)`);
 }
@@ -187,6 +189,13 @@ async function enterProcuracao(grupo, posicao) {
     await enterProcuracao(current.grupo, current.posicao);
     note(`entrou na procuração grupo=${current.grupo} posicao=${current.posicao} (descoberta)`);
   } catch (error) {
+    // Visto ao vivo (14/10/2026): o clique na procuração às vezes não abre nada nesta página, mas o mesmo pedido,
+    // recomeçado do zero, entra normalmente. Uma nova chance numa aba nova antes de marcar a falha.
+    if (/^PROCURACAO_NAO_ABRIU/.test(error.message) && !run.enterRetried) {
+      note("recomeçando numa aba nova da Página Principal");
+      await chrome.runtime.sendMessage({ type: "RETRY_IN_FRESH_TAB" });
+      return;
+    }
     await chrome.runtime.sendMessage({ type: "REPORT_FAILURE", taskId: run.taskId, motivo: error.message + describeDiagnostics() });
   }
 })();

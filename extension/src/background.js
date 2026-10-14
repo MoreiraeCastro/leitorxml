@@ -1313,6 +1313,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         }
+        case "RETRY_IN_FRESH_TAB": {
+          // A página principal ficou "surda" ao clique na procuração — recomeça a mesma corrida numa aba nova (1x).
+          const run = await getActiveRun();
+          if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
+          await setActiveRun({ ...run, enterRetried: true, startedAt: Date.now() });
+          if (sender.tab?.id != null) await chrome.tabs.remove(sender.tab.id).catch(() => {});
+          const fresh = await chrome.tabs.create({ url: HOME_URL, active: true });
+          trail(`aba nova ${fresh.id} aberta para tentar a procuração de novo`);
+          sendResponse({ ok: true });
+          break;
+        }
         case "SWEEP_RETRY_POSITION": {
           // A lista lida era a da procuração anterior (tela velha) — reabre a MESMA posição pela Página Principal.
           const run = await getActiveRun();
