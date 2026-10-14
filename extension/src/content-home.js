@@ -53,6 +53,9 @@ function collectProcuracaoLinks(container) {
 
 /** Abre o modal "Escolha um perfil" e devolve o container com os links já carregados (AJAX). */
 async function openAutoFiscoFacilModal() {
+  // Já aberto (2ª tentativa de enterProcuracao): clicar no card por baixo do modal não faria nada.
+  const openContainer = document.getElementById("modalAutorizacoes")?.classList.contains("show") ? document.getElementById("conteudoModalAutorizacoes") : null;
+  if (openContainer?.textContent.includes("Acesso por procuração")) return openContainer;
   const card = await waitFor(findAutoFiscoFacilCard, { timeoutMs: 10000, label: "card AUTO Fisco Fácil aparecer" });
   realClick(card);
 
@@ -87,14 +90,21 @@ async function listProcuracaoPositions() {
  * direta de função carregam; um clique via CDP conta como gesto real.
  */
 async function enterProcuracao(grupo, posicao) {
-  const container = await openAutoFiscoFacilModal();
-  const links = collectProcuracaoLinks(container);
-  const match = links.find((item) => item.grupo === grupo && item.posicao === posicao);
-  if (!match) {
-    throw new Error(`PROCURACAO_NAO_ENCONTRADA: grupo=${grupo} posicao=${posicao} (encontrados: ${links.length})`);
+  // Navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí e esta página morre.
+  // Visto ao vivo (14/10/2026): o clique no modal às vezes não leva a lugar nenhum e a corrida ficava parada
+  // até o vigia (190s). Se em 20s ainda estivermos aqui, reabre o modal e clica de novo; na 2ª, falha rápido.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const container = await openAutoFiscoFacilModal();
+    const links = collectProcuracaoLinks(container);
+    const match = links.find((item) => item.grupo === grupo && item.posicao === posicao);
+    if (!match) {
+      throw new Error(`PROCURACAO_NAO_ENCONTRADA: grupo=${grupo} posicao=${posicao} (encontrados: ${links.length})`);
+    }
+    await realNavigationClick(match.element);
+    await new Promise((resolve) => setTimeout(resolve, 20000));
+    note(`clique na procuração ${posicao} não abriu nada em 20s (tentativa ${attempt})`);
   }
-  await realNavigationClick(match.element);
-  // Navega para fisco-facil.fazenda.rj.gov.br — content-fisco.js assume a partir daí.
+  throw new Error(`PROCURACAO_NAO_ABRIU: grupo=${grupo} posicao=${posicao} — o clique no modal não levou à lista de empresas (2 tentativas)`);
 }
 
 (async () => {
