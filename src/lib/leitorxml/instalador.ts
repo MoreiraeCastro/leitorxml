@@ -153,6 +153,9 @@ try {
     $chave = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\${NATIVE_HOST_NAME}'
     New-Item -Path $chave -Force | Out-Null
     Set-ItemProperty -Path $chave -Name '(default)' -Value $hostManifest
+    # Confere: sem esta chave o Chrome não acha o atualizador (visto em 14/10/2026: arquivos gravados, chave ausente).
+    if ((Get-ItemProperty -Path $chave -ErrorAction SilentlyContinue).'(default)' -ne $hostManifest) { throw 'Não consegui registrar o atualizador no Chrome (registro do Windows).' }
+    Add-Content -LiteralPath (Join-Path $dirAtualizador 'atualizador.log') -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' instalador: atualizador registrado no Chrome para ' + ($origens -join ', '))
   }
 } catch {
   Aviso ("Não consegui instalar:" + [Environment]::NewLine + $_.Exception.Message + [Environment]::NewLine + [Environment]::NewLine + "Feche o Chrome e abra este instalador de novo. Se repetir, chame o João.") 'Error'
