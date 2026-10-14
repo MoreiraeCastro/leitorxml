@@ -1,0 +1,39 @@
+{
+  "versao": "0.1.5",
+  "commit": "6455569",
+  "arquivos": [
+    {
+      "caminho": "manifest.json",
+      "sha256": "233468369e23134b2f97b1ce3a241856aa09023674c92730409920bc18080f00"
+    },
+    {
+      "caminho": "popup/popup.html",
+      "sha256": "6d88d7fa98853bb84825ec9934d07d13ca7968c1ed2d97b013f98efd716d050e"
+    },
+    {
+      "caminho": "popup/popup.js",
+      "sha256": "fa1682d3c48951d75f209b166dca6791495007ea61e508e06793491b51bb1207"
+    },
+    {
+      "caminho": "src/background.js",
+      "sha256": "c7bbfa9f664848db9a5d3c93298cff514abf48104e2b356f7df2755b18bd6718"
+    },
+    {
+      "caminho": "src/content-fisco.js",
+      "sha256": "af8065195f101a200df414d92a18ebabd7570617b2c6dd5e94326d16801d71ce"
+    },
+    {
+      "caminho": "src/content-home.js",
+      "sha256": "ef26183c4f48024e0cdaebd42dbc987b78035fff8fa2f141524e3158e512224f"
+    },
+    {
+      "caminho": "src/content-portal.js",
+      "sha256": "2485996948cc984f2da7962ed034b260f4a8471f59c86b4ff70842903b4a26a8"
+    },
+    {
+      "caminho": "src/dom-utils.js",
+      "sha256": "de74e7e7434a92139742e18dc0b380f5e9273f4cd4affc11486f9ec1508791a6"
+    }
+  ],
+  "assinatura": "QQ9YJ1odTXSeaCqRnJYpuqhnIIoLQNwcw4HdQfdvVPsrKsEEsrm4NIQT6d8bBtwLfhKcAYjuhacAZoDg89orVPb0Be1Er+D1MCPUnZZCCjacD7t961bo2xUGYHvWmJIfUETLE41RlmgkGrc3qHNCQ4vGauC0wooKeOJpK9K8gSdXwXwjSojgmNKuR8qxJZVn1NIODAWh+eDm1Vc9blWp6Da5ueG120Op/gNvBUfj+Ff+E+hIe7RrEZEE8+6aYEhFywYMOp+kXtE/YbGRPMOhMwHWobaM3H7GxgZ/1iMpbpMYfxADciQQggg4gZzYsaNtBuWskA3h+elLhHGA1m/iuFKhPCXu9xZAb/5I1hTX8yRE+6UgwjMOKLxSWraAsSCj+hezThElfWZ+51I1sItwQl7iIrcfWOGLA8QzfWmSJ1STrB9auOvyuDxu08xsQGxn4GnNdGCvn0wMZtpEdgWyQxZRNjYkY+vA9pDQJYVqKNqDApH/zk85wBb6B1agGcAq"
+}
