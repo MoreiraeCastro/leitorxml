@@ -377,7 +377,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   if (alarm.name !== "run-watchdog") return;
   const run = await getActiveRun();
-  if (!run || run.mode === "SWEEP" || typeof run.startedAt !== "number") return;
+  if (run?.mode === "SWEEP") {
+    // Varredura parada (nenhum passo em 5 min) prenderia tudo — inclusive os pedidos automáticos do mês. Encerra
+    // com erro visível; os pedidos seguem, e a busca por procuração corrige o índice onde precisar.
+    const { lastNote } = await chrome.storage.session.get("lastNote");
+    if (Date.now() - Math.max(run.startedAt ?? 0, lastNote?.at ?? 0) < SWEEP_STALL_MS) return;
+    trail(`atualização de procurações parada há ${Math.round(SWEEP_STALL_MS / 60000)} min — encerrando`);
+    await chrome.storage.session.set({ lastSweepError: `A atualização das procurações parou na ${(run.sweepCursor ?? 0) + 1}ª procuração (último passo: "${lastNote?.step ?? "nenhum"}"). Rode de novo em Mais opções.` });
+    await clearActiveRun();
+    chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 });
+    return;
+  }
+  if (!run || typeof run.startedAt !== "number") return;
   if (run.mode === "TRACK") {
     const { lastNote } = await chrome.storage.session.get("lastNote");
     const idleFor = Date.now() - Math.max(run.startedAt, lastNote?.at ?? 0);
@@ -594,6 +605,8 @@ const AUTO_PAUSE_AFTER_PROBLEM_MS = 2 * 60 * 60 * 1000; // esteira automática q
 const AUTO_TRACK_STALE_HOURS = 12; // uma solicitação "aguardando" só é reconferida depois disso (o SEFAZ leva dias)
 const AUTO_TRACK_FROM_HOUR = 7; // seg–sex, horário local do PC
 const AUTO_TRACK_TO_HOUR = 20;
+const SWEEP_STALL_MS = 5 * 60_000;
+const AUTO_SWEEP_FRESH_MS = 5 * 24 * 3600_000; // atualização de procurações feita há menos que isso (à mão, p.ex. no dia 8) vale pro mês
 chrome.alarms.get(AUTO_TRACK_ALARM).then((alarm) => {
   if (!alarm) chrome.alarms.create(AUTO_TRACK_ALARM, { delayInMinutes: 2, periodInMinutes: 20 });
 });
@@ -628,6 +641,18 @@ async function maybeAutoTrack({ ignoreSchedule = false } = {}) {
   let tabId = await findWorkTabId();
   if (tabId == null && robotMode) tabId = await openWorkTab();
   if (tabId == null) return setAutoStatus({ state: "PRECISA_ABRIR_FISCO", summary });
+  // Antes de pedir o mês, atualiza o índice de procurações (empresas mudam de SUBFIN/procuração de um mês pro outro):
+  // uma vez por mês, e só se ninguém rodou a atualização nos últimos dias.
+  if (!trackWork && requestWork) {
+    const mes = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    const { autoSweepMonth, lastSweepDoneAt = 0 } = await chrome.storage.local.get(["autoSweepMonth", "lastSweepDoneAt"]);
+    if (autoSweepMonth !== mes && Date.now() - lastSweepDoneAt > AUTO_SWEEP_FRESH_MS) {
+      await chrome.storage.local.set({ autoSweepMonth: mes }); // marca a TENTATIVA: se falhar, os pedidos seguem (a busca corrige o índice)
+      await setAutoStatus({ state: "RODANDO", summary, message: "Atualizando a lista de procurações antes de pedir o mês" });
+      await startSweep(tabId);
+      return;
+    }
+  }
   await setAutoStatus({ state: "RODANDO", summary });
   const outcome = trackWork ? await startTrackingBelt({ tabId, auto: true }) : await startRequestBelt({ tabId, auto: true });
   if (!outcome.ok) await setAutoStatus({ state: "ERRO", message: outcome.error });
@@ -966,13 +991,25 @@ async function resumeBeltAfterVerify(tabId) {
  * Fase separada da execução (REQUEST_NEXT_TASK continua sendo quem processa
  * as tarefas já criadas, uma de cada vez).
  */
-async function startSweep() {
+async function startSweep(preferredTabId) {
   const run = { mode: "SWEEP", step: "NAVIGATE_HOME", startedAt: Date.now() };
   await setActiveRun(run);
+  if (preferredTabId != null) {
+    await navigateToHome(preferredTabId);
+    return run;
+  }
   const [tab] = await chrome.tabs.query({ url: "https://ssacert.fazenda.rj.gov.br/*" });
   if (tab) await chrome.tabs.update(tab.id, { active: true, url: HOME_URL });
   else await chrome.tabs.create({ url: HOME_URL });
   return run;
+}
+
+/** Varredura terminou (todas as procurações): registra e, se veio do automático, já segue pros pedidos. */
+async function finishSweep() {
+  await chrome.storage.session.remove("lastSweepError");
+  await chrome.storage.local.set({ lastSweepDoneAt: Date.now() });
+  await clearActiveRun();
+  chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 });
 }
 
 async function reportEvento(taskId, body) {
@@ -1311,7 +1348,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!run) return sendResponse({ ok: false, error: "NO_ACTIVE_RUN" });
           const nextCursor = (run.sweepCursor ?? 0) + 1;
           if (nextCursor >= run.sweepQueue.length) {
-            await clearActiveRun();
+            await finishSweep();
             sendResponse({ ok: true, done: true });
             break;
           }
@@ -1350,8 +1387,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case "SWEEP_DONE": {
-          await chrome.storage.session.remove("lastSweepError");
-          await clearActiveRun();
+          await finishSweep();
           sendResponse({ ok: true });
           break;
         }

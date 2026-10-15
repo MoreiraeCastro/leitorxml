@@ -74,6 +74,7 @@ async function sweepCurrentPage(run, firstPage = true) {
     }
     await setRunFlag({ sweepLastSignature: { posicao: current.posicao, signature } });
   }
+  note(`procuração ${current.posicao}: ${rows.length} empresa(s) nesta página`); // prova de vida pro vigia da varredura
   for (const row of rows) {
     if (row.situacaoCadastral === "Baixada") continue;
     await chrome.runtime.sendMessage({ type: "REGISTER_ESTABLISHMENT", ...row, procuracaoGrupo: current.grupo, posicao: current.posicao });
