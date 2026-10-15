@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
+import { BASE_PATH } from "@/lib/base-path";
 import { ZIP_BUCKET, parsePartitioned, signZipLink } from "@/lib/leitorxml/zip-storage";
 
 export const runtime = "nodejs";
@@ -18,15 +19,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!task?.storage_path_zip) return NextResponse.json({ error: "Esta tarefa não tem arquivo em staging." }, { status: 404 });
     if (parsePartitioned(task.storage_path_zip)) {
       // ZIP em partes: o link aponta pra rota que remonta o arquivo (chrome.downloads não manda o token, então vai assinado).
+      // Monta o endereço público do zero: partir de request.url (http://127.0.0.1:3003/…) e trocar só o host mantinha a
+      // porta interna — o link saía como https://portal…:3003/… e o download falhava no PC (visto 15/10/2026).
       const expiresAt = Date.now() + 10 * 60_000;
-      const url = new URL(request.url);
-      url.pathname = url.pathname.replace(/\/arquivo\/?$/, "/arquivo/conteudo");
-      url.search = new URLSearchParams({ exp: String(expiresAt), sig: signZipLink(id, expiresAt) }).toString();
-      const proto = request.headers.get("x-forwarded-proto");
-      const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-      if (proto) url.protocol = `${proto}:`;
-      if (host) url.host = host;
-      return NextResponse.json({ url: url.toString() });
+      const proto = request.headers.get("x-forwarded-proto") ?? "https";
+      const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "portalmoreiraecastro.com.br";
+      const query = new URLSearchParams({ exp: String(expiresAt), sig: signZipLink(id, expiresAt) });
+      return NextResponse.json({ url: `${proto}://${host}${BASE_PATH}/api/leitorxml/extensao/tarefas/${id}/arquivo/conteudo?${query}` });
     }
     const { data, error: signError } = await db.storage.from(ZIP_BUCKET).createSignedUrl(task.storage_path_zip, 60);
     if (signError || !data?.signedUrl) throw signError ?? new Error("SIGN_FAILED");
