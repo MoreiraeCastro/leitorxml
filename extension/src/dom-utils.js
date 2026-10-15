@@ -382,18 +382,31 @@ async function realNavigationClick(el, { downloadTaskId = null, retriedAfterDial
   if (rect.width === 0 || rect.height === 0) {
     throw new Error(`REAL_CLICK_ALVO_SEM_TAMANHO: ${el.tagName}#${el.id}.${String(el.className).slice(0, 60)} com rect ${JSON.stringify(rect)} — provavelmente invisível ou fora da tela`);
   }
-  const x = Math.round(rect.left + rect.width / 2);
-  const y = Math.round(rect.top + rect.height / 2);
+  let x = Math.round(rect.left + rect.width / 2);
+  let y = Math.round(rect.top + rect.height / 2);
   // Confere que o elemento no ponto é o alvo (ou algo dentro dele): se outro
   // elemento cobrir o ponto, ou o ponto cair fora da janela, o CDP "clica com
   // sucesso" em outra coisa e nada acontece — nunca clicar às cegas.
-  const topmost = document.elementFromPoint(x, y);
+  const hits = (node) => Boolean(node) && (el === node || el.contains(node));
+  let topmost = document.elementFromPoint(x, y);
   // Aviso do próprio site aberto por cima de tudo (visto ao vivo, 2026-10-13: `#alertNotificacao_modal`
   // cobrindo o menu lateral): fecha o diálogo e tenta o clique de novo, uma vez.
-  if (topmost && !(el === topmost || el.contains(topmost)) && !retriedAfterDialog && (await dismissBlockingDialog(topmost))) {
+  if (topmost && !hits(topmost) && !retriedAfterDialog && (await dismissBlockingDialog(topmost))) {
     return realNavigationClick(el, { downloadTaskId, retriedAfterDialog: true });
   }
-  if (!topmost || !(el === topmost || el.contains(topmost))) {
+  // Algo pequeno por cima só do CENTRO do alvo (visto 15/10/2026: um <span> sobre a aba "Solicitações", logo depois
+  // de a página carregar): procura outro ponto livre dentro do alvo e, se não achar, espera a tela assentar e mede de novo.
+  for (let tentativa = 0; tentativa < 3 && !hits(topmost); tentativa++) {
+    if (tentativa > 0) await new Promise((resolve) => setTimeout(resolve, 800));
+    const r = el.getBoundingClientRect();
+    const pontos = [0.5, 0.25, 0.75, 0.12, 0.88].flatMap((fx) => [0.5, 0.3, 0.7].map((fy) => [Math.round(r.left + r.width * fx), Math.round(r.top + r.height * fy)]));
+    const livre = pontos.find(([px, py]) => hits(document.elementFromPoint(px, py)));
+    if (livre) {
+      [x, y] = livre;
+      topmost = document.elementFromPoint(x, y);
+    }
+  }
+  if (!hits(topmost)) {
     const describe = (node) => (node ? `${node.tagName}${node.id ? `#${node.id}` : ""}.${String(node.className ?? "").slice(0, 40)}` : "nada (fora da janela)");
     throw new Error(`REAL_CLICK_ALVO_COBERTO: em (${x},${y}) está ${describe(topmost)}, esperava ${describe(el)} [janela ${window.innerWidth}x${window.innerHeight}] [overlay: ${describeLoadingOverlay()}]`);
   }
