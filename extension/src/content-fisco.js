@@ -425,6 +425,21 @@ function findFilesTable() {
   return [...document.querySelectorAll("table")].find((table) => /Arquivo/i.test(table.textContent) && /Expira em/i.test(table.textContent) && table.querySelector("tbody tr td")) ?? null;
 }
 
+/** "Expira em" de cada linha da tabela de arquivos (DD/MM/AAAA HH:MM → Date), ou null se não der pra ler. */
+function readExpiry(table, row) {
+  const headers = [...table.querySelectorAll("thead th, thead td")].map((cell) => cell.textContent.replace(/\s+/g, " ").trim());
+  const index = headers.findIndex((text) => /Expira em/i.test(text));
+  const cell = index >= 0 ? row.querySelectorAll("td")[index] : null;
+  const m = /(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(cell?.textContent ?? "");
+  return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 23), Number(m[5] ?? 59)) : null;
+}
+
+/** Aviso de erro genérico do Fisco ("Desculpe-nos o transtorno…") aberto na tela, ou "" se não houver. */
+function fiscoErrorDialogText() {
+  const dialog = [...document.querySelectorAll(".ui-dialog")].find((el) => el.offsetWidth > 0 && /Desculpe-nos o transtorno|equipe de suporte/i.test(el.textContent));
+  return dialog ? dialog.textContent.replace(/\s+/g, " ").trim().slice(0, 160) : "";
+}
+
 /**
  * Página de detalhe de uma solicitação "Processada": clica no botão de download de cada arquivo da
  * tabela (o ZIP é capturado na resposta de rede, via CDP) e volta pra aba Solicitações da empresa.
@@ -445,8 +460,27 @@ async function downloadFromDetailPage(run) {
     note(`página da solicitação: ${rows.length} arquivo(s): ${rows.map((row) => row.textContent.replace(/\s+/g, " ").trim().slice(0, 100)).join(" | ")}`);
     if (!rows.length) throw new Error("Nenhum arquivo listado na página da solicitação");
 
+    // O Fisco só guarda o ZIP até "Expira em"; depois disso o download dá "Desculpe-nos o transtorno" e, fechando o
+    // aviso e clicando de novo, a extensão ficava em looping (visto ao vivo, 15/10/2026). Expirado = EXPIRADA, sem clicar.
+    const expiries = rows.map((row) => readExpiry(table, row));
+    if (expiries.every((date) => date && date.getTime() < Date.now())) {
+      note(`arquivo expirado em ${expiries.map((date) => date.toLocaleString("pt-BR")).join(", ")} — marcando como expirada`);
+      await chrome.runtime.sendMessage({ type: "TRACK_REPORT", taskId: task.id, status: "EXPIRADA", sefazReferencia: task.sefazReferencia });
+      await finish();
+      return;
+    }
+
     const errors = [];
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
+      if (expiries[index] && expiries[index].getTime() < Date.now()) {
+        errors.push(`arquivo ${index + 1} expirou em ${expiries[index].toLocaleString("pt-BR")}`);
+        continue;
+      }
+      const avisoAntes = fiscoErrorDialogText();
+      if (avisoAntes) {
+        errors.push(`FISCO_RECUSOU_DOWNLOAD: "${avisoAntes}"`);
+        break;
+      }
       const button = row.querySelector("td a, td button, td [role='button']");
       if (!button) {
         errors.push("linha sem botão de download");
@@ -455,7 +489,11 @@ async function downloadFromDetailPage(run) {
       const response = await realNavigationClick(button, { downloadTaskId: task.id });
       const result = response.result ?? {};
       if (result.ok) note(`ZIP capturado (${result.bytes} bytes) e enviado`);
-      else errors.push(`${result.error ?? "sem resultado"}${result.diag ? ` | ${result.diag}` : ""}`);
+      else {
+        const aviso = fiscoErrorDialogText();
+        errors.push(`${result.error ?? "sem resultado"}${result.diag ? ` | ${result.diag}` : ""}${aviso ? ` | aviso do Fisco: "${aviso}"` : ""}`);
+        if (aviso) break; // o Fisco recusou: não insiste nas outras linhas nem fica fechando/clicando
+      }
     }
     if (errors.length) await failTrackedTask(task, `DOWNLOAD_FALHOU: ${errors.join(" ;; ")}`);
   } catch (error) {
