@@ -167,6 +167,17 @@ describe("validateCollectedZip", () => {
       expect(result.reason).toBe("ZIP_EXCEDE_LIMITE_TAMANHO");
     });
 
+    it("aceita o ZIP do mês acima de 50 MB (o limite individual é só pra XML)", () => {
+      // Visto em 15/10/2026: NFC-e de restaurante, `2026_09.zip` com 61 MB dentro do arquivo baixado do Fisco.
+      const mes = buildStoreZip([{ name: `NFCE${keyC}.xml`, content: `<chNFe>${keyC}</chNFe>` }]);
+      const zip = buildStoreZip([{ name: "2026_09.zip", content: mes, declaredUncompressedSize: 61 * 1024 * 1024 }]);
+      const result = validateCollectedZip(zip);
+      expect(result.ok).toBe(true);
+      expect(result.accessKeysFound).toEqual([keyC]);
+      const xmlGrande = buildStoreZip([{ name: "enorme.xml", content: "x", declaredUncompressedSize: 61 * 1024 * 1024 }]);
+      expect(validateCollectedZip(xmlGrande).reason).toContain("limite individual");
+    });
+
     it("rejeita nome inseguro dentro de um ZIP aninhado", () => {
       const inner = buildStoreZip([{ name: "../../fora.xml", content: "x" }]);
       const result = validateCollectedZip(buildStoreZip([{ name: "2026_08.zip", content: inner }]));

@@ -38,7 +38,10 @@ function assertSafeEntry(entry: ZipEntry) {
   if (entry.name.includes("..") || entry.name.startsWith("/") || entry.name.startsWith("\\")) {
     throw new UnsafeZipError(`Nome de entrada inseguro no ZIP: ${entry.name}`);
   }
-  if (entry.uncompressedSize > MAX_ENTRY_UNCOMPRESSED_BYTES) {
+  // O limite individual é pra XML. O ZIP do mês que vem DENTRO do arquivo do Fisco (`2026_09.zip`) é quase o
+  // arquivo inteiro — em NFC-e de restaurante passa de 60 MB (visto 15/10/2026) — e já é coberto pelo limite total.
+  const limit = /\.zip$/i.test(entry.name) ? MAX_TOTAL_UNCOMPRESSED_BYTES : MAX_ENTRY_UNCOMPRESSED_BYTES;
+  if (entry.uncompressedSize > limit) {
     throw new UnsafeZipError(`Entrada "${entry.name}" excede o limite individual de tamanho descompactado.`);
   }
 }
