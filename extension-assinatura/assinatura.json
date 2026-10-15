@@ -1,14 +1,14 @@
 {
-  "versao": "0.1.15",
-  "commit": "30fe796",
+  "versao": "0.1.16",
+  "commit": "b4e5458",
   "arquivos": [
     {
       "caminho": "manifest.json",
-      "sha256": "dc3b7cb8fc0c29d1a513e4aa6630d5896916a25574b0a5be55532b2492db3ef1"
+      "sha256": "0d97d2ecf7a428bda3cdc987e00cabd23bf84fc2aa0bd2996740c51ffa89790a"
     },
     {
       "caminho": "popup/popup.html",
-      "sha256": "6d88d7fa98853bb84825ec9934d07d13ca7968c1ed2d97b013f98efd716d050e"
+      "sha256": "317edbd118daa558605c69f525eb5f73da3353acdb9749cdc15d2cf520634342"
     },
     {
       "caminho": "popup/popup.js",
@@ -16,11 +16,11 @@
     },
     {
       "caminho": "src/background.js",
-      "sha256": "491495cc48176119990253ea5706f250eeefd7d964cd8a7d85c65a4930e3716e"
+      "sha256": "a0d6135d9899ad6629eae8ebc2df0d4b57bce4b570d19a44534f3c8471164157"
     },
     {
       "caminho": "src/content-fisco.js",
-      "sha256": "8a574368378d0a3c59bae87ce79de13884e4aaf69c7ee216c1b731e4441a873d"
+      "sha256": "5bb1d0aba61e9c21d065109f6e4966f7fc21c3ea0811faa47517b378213fb93a"
     },
     {
       "caminho": "src/content-home.js",
@@ -35,5 +35,5 @@
       "sha256": "914b303feb81700b580d1f2adbca3d03e28f9568f6b7e9bea8016eaf7be7a85d"
     }
   ],
-  "assinatura": "CXJJikzNwOoOb/Q40cMBIqb+Cdk9iRmkwCZBaU6NF2/dMDBMQVxnPevp16IG8siC2KXa4uD/oVXSSwsx5Ra9/3ZtmzRmBtoyOG4bbxjKFDTHBg4jxekZnvSSLKBwksKSb+B8eoWTCuNfrGYVRYGY+PSwjrb0lRvgXWErWQwyVGCQmJKtg8YD4hnetARVY1ho0sVF5P36FfUP2U1wnE+nogk7ExdAqzviIGlAVnmhn0NMtWYUVSf1cjDyrOcsVBYuRfF8Bpug1N0G/uZuF81Hibp6SM5X46MJCcdTkY0wzeG9t43oItmDTFlwYmqEV5eHWuwETG67lwoT7TdhRYLJ4y5urCPRIcgcL09rCJj/MadWGddG9zIWMoqdGO63AqiAV7pbD395DLflID6bmVJ0VBhVgzzLGbAY+MVsoIuiZt/WLhIqyITtO4gm0Dj1hidEq+4xfOz0676Ttn+/e/MCPRPaO9d8SD1cne8ibxyog5j6SpF6lRh1olvhGksJP74c"
+  "assinatura": "H5F13V8Pq5XDhLSY+Q0O4IgMejrX9doeuu5wtrW2giUHBsnUEk+OR3mleS8/0SZmt0sHrhW8n1/qo1Y+M3K8+beK5DWO0jwWhuE4ElsyxJ1wV9ar68eHv8gx5sZW6Cxf9+pPdK+EKb4z0XlKCjzcedLJwKs1MRe6LW03d2oTL3WZUjxEBuPcsce2CoG+V+kVHrt9Q92cKzw/vnRY6MMxNR2e9m3TnvCxe4kPdMEnEWGJxZXB6ZpgCYTnjVbkdG7kwDGiSO8ZegWXVEkYiPpDfgVOByzvDCXUqBMW93FA1APllqa/9AIeRQtY1LRQMiAgl9UGMwViuop9RTbkGiqVOl+r4qzYx9J1qTltsLbzCKjeE6rNI1H3XVqySFUlhjd4orqDAUSqmoHPPw/USwhAqXX6n5y4+MzLO2Y0hCQDaj3MC/nuDeSS4QRppkY6X7YCeFfIEq5MnrZJMRrs2TJW5BdSOygx5z2es8lpBnkoeW2vHsQMF2NTT/S+O8gbKIoU"
 }
