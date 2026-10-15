@@ -335,14 +335,17 @@ function visibleClickTarget(el) {
  * diálogo pelo × da barra de título (ou um botão Fechar/OK/Ciente) e espera a máscara sumir. Devolve true se fechou.
  */
 async function dismissBlockingDialog(cover) {
+  // Dois jeitos de um aviso do site atrapalhar o clique: a máscara escura de um diálogo modal (`<id>_modal`) cobrindo
+  // a tela, ou o PRÓPRIO diálogo por cima do alvo, sem máscara — visto 15/10/2026: "Atenção! Existem 8 notificações
+  // não lidas… CIENTE" sobre a aba Solicitações, ao entrar na empresa.
   const mask = cover.closest?.(".ui-widget-overlay");
-  if (!mask?.id?.endsWith("_modal")) return false;
-  const dialog = document.getElementById(mask.id.slice(0, -"_modal".length));
-  if (!dialog) return false;
+  const dialog = mask?.id?.endsWith("_modal") ? document.getElementById(mask.id.slice(0, -"_modal".length)) : cover.closest?.(".ui-dialog, [role='dialog']");
+  if (!dialog || dialog.offsetWidth === 0) return false;
   const text = dialog.textContent.replace(/\s+/g, " ").trim().slice(0, 160);
   const button =
-    dialog.querySelector(".ui-dialog-titlebar-close") ??
-    [...dialog.querySelectorAll("button, a")].find((b) => b.offsetWidth > 0 && /^(fechar|ok|ciente|entendi)$/i.test(b.textContent.trim()));
+    [...dialog.querySelectorAll("button, a, input[type='button'], input[type='submit']")].find(
+      (b) => b.offsetWidth > 0 && /^(fechar|ok|ciente|entendi)$/i.test((b.value || b.textContent).trim()),
+    ) ?? dialog.querySelector(".ui-dialog-titlebar-close");
   if (!button) return false;
   note(`aviso do site por cima da tela (${dialog.id}: "${text}") — fechando`);
   try {
@@ -351,7 +354,8 @@ async function dismissBlockingDialog(cover) {
     realClick(button);
   }
   try {
-    await waitFor(() => !(mask.isConnected && mask.offsetWidth > 0), { timeoutMs: 5000, label: `aviso ${dialog.id} fechar` });
+    const visible = (node) => Boolean(node?.isConnected && node.offsetWidth > 0);
+    await waitFor(() => !visible(mask) && !visible(dialog), { timeoutMs: 5000, label: `aviso ${dialog.id} fechar` });
   } catch {
     return false;
   }
