@@ -1,6 +1,7 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readZip } from "@/lib/leitorxml/zip-storage";
 import { buildSharePointPath, type SharePointTarget } from "./sharepoint-path";
 
 /**
@@ -284,9 +285,9 @@ export async function sendTaskToSharePoint(db: SupabaseClient, taskId: string): 
     if (!task?.storage_path_zip) throw new SharePointError("Tarefa sem arquivo em staging.");
     const establishment = Array.isArray(task.xml_watch_establishments) ? task.xml_watch_establishments[0] : task.xml_watch_establishments;
     if (!establishment) throw new SharePointError("Estabelecimento da tarefa não encontrado.");
-    const download = await db.storage.from("leitorxml-staging").download(task.storage_path_zip);
-    if (download.error || !download.data) throw new SharePointError("Não foi possível ler o arquivo do staging.");
-    const buffer = Buffer.from(await download.data.arrayBuffer());
+    const buffer = await readZip(db, task.storage_path_zip).catch(() => {
+      throw new SharePointError("Não foi possível ler o arquivo do staging.");
+    });
     const result = await uploadToSharePoint(db, {
       cnpj: establishment.cnpj, razaoSocial: establishment.razao_social, folderPath: establishment.sharepoint_folder_path,
       tipo: task.tipo_documento, papel: task.papel, ano: task.competencia_ano, mes: task.competencia_mes,

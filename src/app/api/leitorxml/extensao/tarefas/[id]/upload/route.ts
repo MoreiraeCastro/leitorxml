@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
-import { validateCollectedZip } from "@/lib/leitorxml/upload-validation";
-import { sendTaskToSharePoint, sharePointReady } from "@/lib/leitorxml/sharepoint";
+import { registerCollectedZip } from "@/lib/leitorxml/collected-zip";
+import { ZIP_BUCKET } from "@/lib/leitorxml/zip-storage";
 
 export const runtime = "nodejs";
-const maxZipBytes = 50 * 1024 * 1024;
+// O Storage recusa objeto acima de 50 MB: maior que isso vem em partes (upload/parte + upload/concluir). A extensão
+// já divide acima de 40 MB; 48 MB aqui só mantém funcionando versões antigas que mandavam inteiro até 50 MB.
+const maxZipBytes = 48 * 1024 * 1024;
 
-/** Recebe o ZIP baixado do Fisco Fácil, valida (descompactação segura, hash, chave de acesso) e grava em staging — o SharePoint ainda não está integrado (ver handoff), então o arquivo fica disponível para revisão até essa etapa existir. */
+/** Recebe o ZIP baixado do Fisco Fácil, valida (descompactação segura, hash, chave de acesso) e grava em staging. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const db = createAdminClient();
   const identity = await resolveExtensionToken(db, request.headers.get("authorization"));
@@ -23,39 +25,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const file = form.get("file");
     if (!(file instanceof File)) return NextResponse.json({ error: "Envie o arquivo ZIP recebido do Fisco Fácil." }, { status: 400 });
     if (!file.name.toLowerCase().endsWith(".zip") || file.size === 0 || file.size > maxZipBytes) {
-      return NextResponse.json({ error: "Arquivo ZIP inválido ou maior que o limite." }, { status: 422 });
+      return NextResponse.json({ error: "Arquivo ZIP inválido ou maior que o limite (envie em partes)." }, { status: 422 });
     }
     const buffer = Buffer.from(await file.arrayBuffer());
-    const validation = validateCollectedZip(buffer);
-    const resultadoValidacao = validation.ok ? (validation.accessKeysFound.length ? "OK" : "QUARENTENA") : "REJEITADO";
 
     storagePath = `tasks/${id}/${crypto.randomUUID()}.zip`;
-    const { error: uploadError } = await db.storage.from("leitorxml-staging").upload(storagePath, buffer, { contentType: "application/zip", upsert: false });
+    const { error: uploadError } = await db.storage.from(ZIP_BUCKET).upload(storagePath, buffer, { contentType: "application/zip", upsert: false });
     if (uploadError) return NextResponse.json({ error: "Não foi possível armazenar o arquivo." }, { status: 500 });
 
-    const { error: fileInsertError } = await db.from("xml_collection_files").insert({
-      task_id: id,
-      hash_sha256: validation.hashSha256,
-      tamanho_bytes: validation.totalBytes,
-      quantidade_documentos: validation.accessKeysFound.length,
-      resultado_validacao: resultadoValidacao,
-      detalhes_validacao: { entryCount: validation.entryCount, reason: validation.reason ?? null },
-    });
-    if (fileInsertError) throw fileInsertError;
-
-    const nextStatus = resultadoValidacao === "REJEITADO" ? "AGUARDANDO_INTERVENCAO" : "DISPONIVEL_REVISAO";
-    await db.from("xml_collection_tasks").update({ status: nextStatus, storage_path_zip: storagePath, updated_at: new Date().toISOString() }).eq("id", id);
-    if (nextStatus === "DISPONIVEL_REVISAO") await db.from("xml_watch_establishments").update({ locked_by_user_id: null, locked_at: null }).eq("id", task.establishment_id);
-
+    const result = await registerCollectedZip(db, task, buffer, storagePath);
     storagePath = undefined;
-    // Já em staging e registrado: o envio ao SharePoint é um passo à parte e não pode desfazer o upload. Se falhar, a tarefa segue em revisão com o erro anotado e a varredura tenta de novo.
-    let sharepoint: "ENVIADO" | "PENDENTE" | "ERRO" | "NAO_CONFIGURADO" = "NAO_CONFIGURADO";
-    if (nextStatus === "DISPONIVEL_REVISAO" && (await sharePointReady(db).catch(() => false))) {
-      sharepoint = (await sendTaskToSharePoint(db, id)).ok ? "ENVIADO" : "ERRO";
-    }
-    return NextResponse.json({ ok: true, resultadoValidacao, documentCount: validation.accessKeysFound.length, sharepoint }, { status: 201 });
+    return NextResponse.json(result, { status: 201 });
   } catch {
-    if (storagePath) await db.storage.from("leitorxml-staging").remove([storagePath]);
+    if (storagePath) await db.storage.from(ZIP_BUCKET).remove([storagePath]);
     return NextResponse.json({ error: "Não foi possível processar o upload." }, { status: 500 });
   }
 }

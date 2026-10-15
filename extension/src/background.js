@@ -390,7 +390,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   if (!run || typeof run.startedAt !== "number") return;
   if (run.mode === "TRACK") {
-    const { lastNote } = await chrome.storage.session.get("lastNote");
+    const { lastNote, bigUploadAt = 0 } = await chrome.storage.session.get(["lastNote", "bigUploadAt"]);
+    if (Date.now() - bigUploadAt < TRACK_IDLE_MS) return; // enviando um ZIP grande em partes: está trabalhando, não travado
     const idleFor = Date.now() - Math.max(run.startedAt, lastNote?.at ?? 0);
     const totalFor = Date.now() - run.startedAt;
     if (idleFor < TRACK_IDLE_MS && totalFor < (run.verifyOnly ? RUN_STALL_MS : TRACK_STALL_MS)) return;
@@ -1070,6 +1071,7 @@ async function uploadTaskZip(taskId, bytes) {
     throw new Error(`RESPOSTA_NAO_E_ZIP (${bytes.length} bytes): "${preview}"`);
   }
   const { apiBaseUrl, apiToken } = await getSettings();
+  if (bytes.length > UPLOAD_PART_BYTES) return uploadTaskZipInParts(taskId, bytes, apiBaseUrl, apiToken);
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "application/zip" }), "extracao.zip");
   const response = await fetch(`${apiBaseUrl}/api/leitorxml/extensao/tarefas/${taskId}/upload`, {
@@ -1078,6 +1080,43 @@ async function uploadTaskZip(taskId, bytes) {
     body: form,
   });
   if (!response.ok) throw new Error(`UPLOAD_FAILED_${response.status}: ${(await response.text()).slice(0, 200)}`);
+  return response.json();
+}
+
+// O armazenamento do portal recusa arquivo acima de 50 MB (visto 15/10/2026: NFC-e de restaurante com 60 MB+).
+// ZIP maior que isto vai em pedaços; o portal junta, confere e entrega o arquivo inteiro de volta.
+const UPLOAD_PART_BYTES = 40 * 1024 * 1024;
+
+async function uploadTaskZipInParts(taskId, bytes, apiBaseUrl, apiToken) {
+  const uploadId = crypto.randomUUID();
+  const total = Math.ceil(bytes.length / UPLOAD_PART_BYTES);
+  trail(`ZIP de ${(bytes.length / 1048576).toFixed(1)} MB — enviando em ${total} partes`);
+  for (let indice = 0; indice < total; indice++) {
+    const parte = bytes.subarray(indice * UPLOAD_PART_BYTES, (indice + 1) * UPLOAD_PART_BYTES);
+    const query = new URLSearchParams({ uploadId, indice: String(indice), total: String(total) });
+    await chrome.storage.session.set({ bigUploadAt: Date.now() });
+    trail(`enviando parte ${indice + 1} de ${total}`);
+    let response;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      response = await fetch(`${apiBaseUrl}/api/leitorxml/extensao/tarefas/${taskId}/upload/parte?${query}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/octet-stream" },
+        body: parte,
+      }).catch((error) => ({ ok: false, status: 0, text: async () => error.message }));
+      if (response.ok) break;
+      if (tentativa < 3) await new Promise((resolve) => setTimeout(resolve, 5000 * tentativa));
+    }
+    if (!response.ok) throw new Error(`UPLOAD_PARTE_${indice + 1}_DE_${total}_FAILED_${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
+  await chrome.storage.session.set({ bigUploadAt: Date.now() });
+  const response = await fetch(`${apiBaseUrl}/api/leitorxml/extensao/tarefas/${taskId}/upload/concluir`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ uploadId, total }),
+  });
+  await chrome.storage.session.remove("bigUploadAt");
+  if (!response.ok) throw new Error(`UPLOAD_CONCLUIR_FAILED_${response.status}: ${(await response.text()).slice(0, 200)}`);
+  trail(`ZIP em ${total} partes recebido e conferido pelo portal`);
   return response.json();
 }
 
@@ -1131,7 +1170,7 @@ async function captureDownloadViaCdp(tabId, x, y, taskId) {
     await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await debuggerCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
-    const timeout = new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "DOWNLOAD_NAO_CAPTURADO_EM_60S" }), 60000));
+    const timeout = new Promise((resolve) => setTimeout(() => !state.captured && resolve({ ok: false, error: "DOWNLOAD_NAO_CAPTURADO_EM_60S" }), 60000));
     const result = await Promise.race([finished, timeout]);
     if (!result.ok && result.error?.startsWith("DOWNLOAD_NAO_CAPTURADO")) {
       const [latest] = await chrome.downloads.search({ orderBy: ["-startTime"], limit: 1 });

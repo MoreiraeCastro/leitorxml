@@ -13,7 +13,9 @@ export const MAX_TREE_ENTRIES = 200000;
  */
 export const MAX_ZIP_DEPTH = 4;
 export const MAX_ENTRY_UNCOMPRESSED_BYTES = 50 * 1024 * 1024; // 50MB por XML individual
-export const MAX_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024; // 500MB no total do lote (somando todos os níveis)
+// 3,5 GB no total do lote (somando todos os níveis): o mês de NFC-e de um restaurante grande passa de 60 MB compactado
+// (15/10/2026), uns 500 MB+ de XML. É guarda contra zip bomb pelo tamanho DECLARADO; cada XML é lido um por vez.
+export const MAX_TOTAL_UNCOMPRESSED_BYTES = 3.5 * 1024 * 1024 * 1024; // cabe no campo de 32 bits do ZIP (testes de zip bomb)
 // Lookaround só em dígitos (não \b): a chave de acesso normalmente aparece
 // colada a letras sem separador, ex. Id="NFe35260900...0010" no XML autorizado
 // ou no próprio nome do arquivo (NFE33260831088032000114550010000190881632500008.xml).
