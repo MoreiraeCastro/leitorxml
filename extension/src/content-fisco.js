@@ -188,7 +188,15 @@ async function handleListaContribuintes(run) {
   // coordenadas "válidas" — rect não-zero, mas fora do viewport).
   await realNavigationClick(row.querySelector("td") ?? row);
   note("clicou na linha da empresa");
-  await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
+  try {
+    await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa" });
+  } catch {
+    // Visto 15/10/2026: o clique na linha às vezes não abre a empresa. Uma 2ª tentativa antes de desistir.
+    const again = [...document.querySelectorAll('[id="FrmFisco:ListaContribuintes_data"] tr')].find((tr) => readRowCnpj(tr) === run.establishment.cnpj) ?? row;
+    note("a empresa não abriu em 15s — clicando na linha de novo");
+    await realNavigationClick(again.querySelector("td") ?? again);
+    await waitFor(() => location.pathname.includes("mainAbasContribuinte"), { timeoutMs: 15000, label: "navegação pra mainAbasContribuinte após clicar na empresa (2ª tentativa)" });
+  }
 }
 
 /**
@@ -241,6 +249,15 @@ async function openSolicitacoesTab() {
   await realNavigationClick(tabLink);
   await waitForAjaxIdle({ label: "AJAX da aba Solicitações terminar" });
   await waitFor(() => document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data"), { timeoutMs: 10000, label: "tabela de solicitações carregar" });
+  // O corpo da tabela aparece antes das linhas (visto 15/10/2026: lida com 0 linhas numa empresa que tinha pedidos).
+  // Espera ter linha de dado OU a mensagem de tabela vazia; se nenhum dos dois vier, segue e quem lê decide.
+  await waitFor(
+    () => {
+      const body = document.getElementById("frmHistInteracoes:tabsHist:solicitacao_data");
+      return body?.querySelector("tr[data-ri]") || body?.querySelector(".ui-datatable-empty-message") ? true : null;
+    },
+    { timeoutMs: 15000, label: "linhas da tabela de solicitações aparecerem" },
+  ).catch(() => {});
 }
 
 function classifySituacao(text) {
@@ -413,6 +430,12 @@ async function trackSolicitacoes(run) {
     if (!next || next.classList.contains("ui-state-disabled")) break;
     await realNavigationClick(next);
     await waitForAjaxIdle({ label: "AJAX da próxima página de Solicitações" });
+  }
+  if (rowsSeen === 0 && pending.size) {
+    // Toda tarefa daqui já foi pedida (tem referência do Fisco), então o histórico NÃO pode estar vazio: a tabela não
+    // carregou. Não marca falha — as tarefas continuam como estão e voltam na próxima rodada do acompanhamento.
+    note(`histórico de solicitações veio vazio — tabela não carregou; ${pending.size} tarefa(s) ficam pra próxima rodada`);
+    pending.clear();
   }
   for (const task of pending.values()) {
     await failTrackedTask(task, `SOLICITACAO_NAO_ENCONTRADA_NO_HISTORICO (${task.tipoDocumento}/${task.papel} ${String(task.competenciaMes).padStart(2, "0")}/${task.competenciaAno}; ${rowsSeen} linha(s) lidas)`);
