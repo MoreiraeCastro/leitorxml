@@ -943,6 +943,13 @@ async function startVerification(previousRun, tabId, nextRun) {
 
 /** Uma empresa falhou no acompanhamento (não conseguiu entrar, travou...): registra e a passada segue pra próxima, a menos que as falhas seguidas passem do limite. */
 async function trackBeltOnFailure(run, motivo, tabId) {
+  // Registra no portal o motivo da visita que falhou (antes ficava só na memória do Chrome).
+  const rastro = await describeTrail(run.claimedAt ?? run.startedAt).catch(() => "");
+  apiFetch("/api/leitorxml/extensao/diagnostico", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tipo: "VISITA_ACOMPANHAMENTO_FALHOU", establishmentId: run.establishment?.id ?? null, motivo: String(motivo).slice(0, 4000), rastro: String(rastro).slice(0, 6000) }),
+  }).catch(() => {});
   const belt = await getBelt();
   if (!belt?.active || belt.kind !== "TRACK") return;
   const failures = belt.failures + 1;
