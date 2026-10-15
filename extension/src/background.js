@@ -181,7 +181,16 @@ async function attachDebugger(tabId) {
 }
 
 async function debuggerCommand(tabId, method, params) {
-  return withTimeout(chrome.debugger.sendCommand({ tabId }, method, params), method);
+  try {
+    return await withTimeout(chrome.debugger.sendCommand({ tabId }, method, params), method);
+  } catch (error) {
+    // Visto ao vivo (15/10/2026): logo depois de fechar um aviso do site (clique real = attach+detach), o attach
+    // seguinte "pegava" mas o 1º comando dizia "Debugger is not attached" — a sessão anterior soltou atrasada.
+    if (!/not attached/i.test(error.message)) throw error;
+    trail(`depurador soltou da aba antes de ${method} — anexando de novo`);
+    await attachDebugger(tabId);
+    return withTimeout(chrome.debugger.sendCommand({ tabId }, method, params), `${method} (2ª tentativa)`);
+  }
 }
 
 async function dispatchRealClick(tabId, x, y) {
