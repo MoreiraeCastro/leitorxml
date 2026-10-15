@@ -1,10 +1,10 @@
 {
-  "versao": "0.1.13",
-  "commit": "f334770",
+  "versao": "0.1.14",
+  "commit": "b519393",
   "arquivos": [
     {
       "caminho": "manifest.json",
-      "sha256": "5cde9c160b85db6873da73ac4614dfff92b019798bb1a0433682080f4d1ba6f7"
+      "sha256": "2fb2923de3d0fad4cb20f93418e786ad1f9c59d7c42af7458122fbd78a542c52"
     },
     {
       "caminho": "popup/popup.html",
@@ -35,5 +35,5 @@
       "sha256": "914b303feb81700b580d1f2adbca3d03e28f9568f6b7e9bea8016eaf7be7a85d"
     }
   ],
-  "assinatura": "o3IeWm5OooYg7ph4+5yjBU9Rjq0iez4sHicioTDDMvjpdfRHDlETaOzLLqBFldSJaSB64ghzOLCREnYhT0iamjOVZTNSRKR5oO+LELC3wXuNOvaTQMBSl1xh7mJ/N5MPiHJyeEdAlLmXh0rzjgUiMgAtCOWQDd32H02rlopL2Y6v0K/29DmFVxDNoiqTK+mYjGEZq3leapHUifudq/bpYDGJjjOhAjmHdT6Q5mUxQ/29SWRVITwCmGGtXYLe7miFMtBcj6gSKv08ECFox1Xtvn5sLBMccU/8rfP+LQKVmmkLJXzhu8GAIw5+VIFGSlOWIqtQeLIgUeEafTGZrq7W4O+baKnp5f/8e6OvbfjdOZ9qJTniCvSJewkEFuFmlsf4a+EoP7uDlkSFrL40rVTJiSORpEcA+ZfzkB2aGFhbyhZlw7jSk+en6J/kIFFXFNZ7y/ST9B38m58EuoMe5sB1MUDkFNqRe+c9MzcpESCag3tbUNSr1ths5VqAVJW9cap7"
+  "assinatura": "AIlWyRoTZeaN47uQ2G4WV2nRwFmg7sUk+UebrF/ZWyDiK0OTV6MpF1EWHe+U5F5LXam6DuXyHQjxhfPkefNvAKRmyXpyiDtE0MY0lPTIHe8w8uZn104ACSTm4W5wls2knp5XuF0z+EJU+LQISiTieaaKlv+jFyc4RIzxRYV6zyMFPaR/gfbb46yiS6R5pglH9e3oLkR9aB9v7XDZ6JmoO3xgNE2JewBBWLU5Z2Ei3Qaawb2lVIbbXEvNdW97/xdSTn/HUAyir8dXHDK1Sj9Qf5+cnEvGBsT6A/oS7iSKWlV8UZeA6Z0UG+nxVRIX+p0f36nX2ao6JUUJiqYXk9Nzl/txqSdiZaDDe6ka5wDFOesFT4xPa0DLVA4nPziFsvJm0gaFGR28k8Ls2M4ftmGcCSuR9FPKiDpGU3S8zDgPh3gIQ0fHwsJ801/Wk0TkvPPFRfVCenVd3qsJYIeM6Bu7UJlEukCBsQs5Z2AFch5kZ5qSQ70BBLzU0j06l49T9HaD"
 }
