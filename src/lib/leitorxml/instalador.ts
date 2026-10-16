@@ -18,6 +18,17 @@ export const DEFAULT_UPDATE_BASE_URL = "https://portalmoreiraecastro.com.br/leit
 export const NATIVE_HOST_NAME = "br.com.moreiraecastro.leitorxml";
 
 /**
+ * Chave do registro que o Chrome lê para achar o atualizador. Montada AQUI, fora do String.raw do script: lá dentro,
+ * uma barra invertida logo antes de "${" impede a interpolação, e o instalador gravava a chave com o nome literal
+ * "${NATIVE_HOST_NAME}" — o Chrome respondia "native messaging host not found". Era esse o "arquivos gravados, chave
+ * ausente" de 14/10/2026: a conferência passava porque lia o mesmo caminho errado. (Achado no DET em 16/10/2026.)
+ */
+export const CHAVE_REGISTRO = "HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\" + NATIVE_HOST_NAME;
+
+/** A chave com o nome errado que o instalador com defeito deixou nos PCs; o instalador novo a apaga. */
+const CHAVE_REGISTRO_ERRADA = "HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\$" + "{NATIVE_HOST_NAME}";
+
+/**
  * Chave PÚBLICA de assinatura (RSA-3072, formato XML do .NET). A privada fica fora do repositório e do servidor, no PC
  * de quem publica (ver scripts/assinar-extensao.mjs). Trocar esta chave exige rodar o instalador de novo nos PCs.
  */
@@ -150,7 +161,9 @@ try {
   $origens = @($ids | Select-Object -Unique | ForEach-Object { 'chrome-extension://' + $_ + '/' })
   @{ name = '${NATIVE_HOST_NAME}'; description = 'Atualizador do Leitor de XML'; path = $host_bat; type = 'stdio'; allowed_origins = $origens } | ConvertTo-Json | Set-Content -LiteralPath $hostManifest -Encoding ASCII
   if (-not $quiet) {
-    $chave = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\${NATIVE_HOST_NAME}'
+    $chave = '${CHAVE_REGISTRO}'
+    # Apaga a chave com nome errado deixada pelo instalador com defeito (ver CHAVE_REGISTRO_ERRADA).
+    Remove-Item -LiteralPath '${CHAVE_REGISTRO_ERRADA}' -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -Path $chave -Force | Out-Null
     Set-ItemProperty -Path $chave -Name '(default)' -Value $hostManifest
     # Confere: sem esta chave o Chrome não acha o atualizador (visto em 14/10/2026: arquivos gravados, chave ausente).

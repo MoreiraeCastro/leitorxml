@@ -26,4 +26,15 @@ describe("buildInstallerBat", () => {
   it("o cmd termina antes do script", () => {
     expect(text.indexOf("exit /b")).toBeLessThan(text.indexOf("$ErrorActionPreference"));
   });
+
+  it("registra o atualizador na chave com o nome REAL do host", () => {
+    // Antes ia o texto literal "${NATIVE_HOST_NAME}" e o Chrome não achava o atualizador (ver CHAVE_REGISTRO).
+    expect(text).toContain(String.raw`$chave = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\br.com.moreiraecastro.leitorxml'`);
+  });
+
+  it("não deixa \"${\" sem interpolar no script, a não ser a chave errada que ele apaga", () => {
+    const semInterpolar = lines.filter((line) => line.includes("${"));
+    expect(semInterpolar).toHaveLength(1);
+    expect(semInterpolar[0]).toMatch(/Remove-Item -LiteralPath '.*NativeMessagingHosts\\\$\{NATIVE_HOST_NAME\}'/);
+  });
 });
