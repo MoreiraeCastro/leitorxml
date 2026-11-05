@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { PORTAL_URL, portalNoAccessUrl } from "@/lib/auth/portal";
 import { createClient } from "@/lib/supabase/server";
 
 // Trimmed do session.ts do fiscalmc-latest: leitorxml é staff-only (sem
@@ -43,12 +44,21 @@ export async function requireOfficeSession(): Promise<OfficeSession> {
   const { data: memberships, error } = await getActiveMemberships(user.id);
   const officeMemberships = memberships?.filter((item) => item.role === "SUPER_ADMIN" || item.role === "OFFICE_STAFF");
   if (error || !officeMemberships?.length) throw new Error("FORBIDDEN_OFFICE");
+  // Login único: a participação de escritório também abre o emissor; o leitor confere a própria
+  // liberação no cadastro do portal (quem não é colaborador segue só pela participação).
+  const { data: allowed, error: accessError } = await client.schema("core").rpc("current_user_portal_allows", { p_module: "leitorxml" });
+  if (accessError || allowed !== true) throw new Error("FORBIDDEN_OFFICE");
   return { userId: user.id, role: officeMemberships.some((item) => item.role === "SUPER_ADMIN") ? "SUPER_ADMIN" : "OFFICE_STAFF", displayName: user.displayName };
 }
 
-/** Server Components redirecionam visitantes não autenticados; rotas de API mantêm respostas de erro HTTP. */
+/**
+ * Server Components mandam ao login do portal (ou ao "sem acesso", se já há login sem o
+ * leitor liberado); rotas de API mantêm respostas de erro HTTP.
+ */
 export async function requireOfficeSessionOrRedirect(): Promise<OfficeSession> {
-  try { return await requireOfficeSession(); } catch { redirect("/login"); }
+  let forbidden = false;
+  try { return await requireOfficeSession(); } catch (error) { forbidden = error instanceof Error && error.message === "FORBIDDEN_OFFICE"; }
+  redirect(forbidden && PORTAL_URL ? portalNoAccessUrl() : "/login");
 }
 
 /**

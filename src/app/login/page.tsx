@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { PORTAL_URL, portalLoginUrl } from "@/lib/auth/portal";
 import { officeLogin } from "./actions";
 
 export const metadata = { title: "Entrar" };
@@ -8,6 +10,8 @@ const errors: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  // Login único: em produção a equipe entra pelo login do portal.
+  if (PORTAL_URL) redirect(portalLoginUrl());
   const { error } = await searchParams;
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f4f6f4] p-6">

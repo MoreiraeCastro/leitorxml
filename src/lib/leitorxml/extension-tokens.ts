@@ -56,6 +56,8 @@ export async function resolveExtensionToken(
     .limit(1)
     .maybeSingle();
   if (membershipError || !membership) return null;
+  const { data: allowed, error: accessError } = await db.schema("core").rpc("portal_allows", { p_user: tokenRow.user_id, p_module: "leitorxml" });
+  if (accessError || allowed !== true) return null;
   const { data: profile } = await db.from("profiles").select("full_name").eq("user_id", tokenRow.user_id).maybeSingle();
   const now = new Date().toISOString();
   const version = extensionVersion?.trim().slice(0, 20);
