@@ -1,6 +1,20 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { findProcurationPosition } from "./procuration-index";
+
+/**
+ * O que a extensão manda ao achar uma empresa na varredura. Tolerante com o que a tela do Fisco Fácil
+ * traz (CNPJ com máscara, razão social longa, situação em branco): recusar aqui deixava a empresa fora da coleta.
+ */
+export const discoveredEstablishmentSchema = z.object({
+  cnpj: z.string().transform((value) => value.replace(/\D/g, "")).pipe(z.string().length(14, "CNPJ precisa de 14 dígitos")),
+  razaoSocial: z.string().trim().min(1).transform((value) => value.slice(0, 250)),
+  inscricaoEstadual: z.string().trim().transform((value) => value.slice(0, 30) || null).nullish(),
+  situacaoCadastral: z.string().trim().nullish().transform((value) => value?.slice(0, 60) || "Não informada"),
+  procuracaoGrupo: z.string().trim().min(1).max(120),
+  posicao: z.coerce.number().int().positive(),
+});
 
 /** Só uma sessão de navegador opera uma empresa por vez (§3.5 da Descoberta) — trava com TTL para não ficar presa se a extensão cair no meio de uma execução. */
 export const ESTABLISHMENT_LOCK_TTL_MS = 30 * 60 * 1000;

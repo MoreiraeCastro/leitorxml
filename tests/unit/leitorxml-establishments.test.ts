@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acquireEstablishmentLock, isEligibleForMonthlyRun, releaseEstablishmentLock, resolveAccessContext } from "@/lib/leitorxml/establishments";
+import { acquireEstablishmentLock, discoveredEstablishmentSchema, isEligibleForMonthlyRun, releaseEstablishmentLock, resolveAccessContext } from "@/lib/leitorxml/establishments";
 
 describe("isEligibleForMonthlyRun", () => {
   it("aceita empresa ativa e não baixada", () => {
@@ -106,5 +106,21 @@ describe("acquireEstablishmentLock / releaseEstablishmentLock", () => {
     const db = fakeEstablishmentsDb({ locked_at: new Date().toISOString() });
     await releaseEstablishmentLock(db, "estab-1");
     expect(db.state.locked_at).toBeNull();
+  });
+});
+
+describe("discoveredEstablishmentSchema", () => {
+  const base = { cnpj: "12345678000190", razaoSocial: "EMPRESA LTDA", situacaoCadastral: "Habilitada", procuracaoGrupo: "SUBFIN", posicao: 3 };
+  it("aceita CNPJ com máscara, situação em branco, razão longa e posição em texto", () => {
+    const r = discoveredEstablishmentSchema.parse({ ...base, cnpj: "12.345.678/0001-90", situacaoCadastral: "  ", razaoSocial: "X".repeat(300), posicao: "7", inscricaoEstadual: "" });
+    expect(r).toMatchObject({ cnpj: "12345678000190", situacaoCadastral: "Não informada", posicao: 7, inscricaoEstadual: null });
+    expect(r.razaoSocial).toHaveLength(250);
+  });
+  it("aceita situação ausente", () => {
+    expect(discoveredEstablishmentSchema.parse({ ...base, situacaoCadastral: undefined }).situacaoCadastral).toBe("Não informada");
+  });
+  it("ainda recusa o que não é CNPJ (CPF) e posição inválida", () => {
+    expect(discoveredEstablishmentSchema.safeParse({ ...base, cnpj: "123.456.789-01" }).success).toBe(false);
+    expect(discoveredEstablishmentSchema.safeParse({ ...base, posicao: 0 }).success).toBe(false);
   });
 });
