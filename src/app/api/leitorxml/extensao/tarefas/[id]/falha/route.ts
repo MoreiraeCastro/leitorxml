@@ -6,6 +6,11 @@ import { resolveExtensionToken } from "@/lib/leitorxml/extension-tokens";
 export const runtime = "nodejs";
 const falhaSchema = z.object({ motivo: z.string().trim().min(1).max(4000) });
 
+/** Empresa que não aparece em nenhuma procuração (mensagens montadas em extension/src/background.js, DISCOVERY_NOT_FOUND). */
+function isOutOfProcurations(motivo: string) {
+  return motivo.includes("EMPRESA_FORA_DAS_PROCURACOES") || /não encontrado em nenhuma das \d+ procurações/.test(motivo);
+}
+
 /** CAPTCHA, bloqueio, confirmação inesperada ou qualquer mudança de tela não reconhecida — a automação para e pede intervenção (regra explícita do escopo original: nunca contornar controles de segurança). */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const db = createAdminClient();
@@ -22,6 +27,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .maybeSingle();
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
+    if (isOutOfProcurations(input.motivo)) {
+      // A extensão já percorreu TODAS as procurações atrás dessa empresa (~4 min). As outras tarefas dela dariam
+      // a mesma volta inteira à toa (SAWA SWEETS, 10/11/2026: 3 voltas seguidas segurando a fila) — saem junto.
+      await db
+        .from("xml_collection_tasks")
+        .update({ status: "AGUARDANDO_INTERVENCAO", erro_mensagem: input.motivo, updated_at: new Date().toISOString() })
+        .eq("establishment_id", data.establishment_id)
+        .in("status", ["AGENDADA", "NA_FILA"]);
+    }
     await db.from("xml_watch_establishments").update({ locked_by_user_id: null, locked_at: null }).eq("id", data.establishment_id);
     return NextResponse.json({ ok: true });
   } catch (error) {
