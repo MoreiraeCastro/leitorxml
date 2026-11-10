@@ -153,11 +153,25 @@ async function handleListaContribuintes(run) {
     }
   }
 
+  if (!row && !run.discovery) {
+    // Lista vazia na procuração do índice: o site às vezes devolve vazio uma vez (10/11/2026, com o overlay
+    // #loading preso). Busca de novo antes de concluir que a empresa não está ali.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    note("lista vazia — buscando a empresa de novo na mesma procuração");
+    row = await searchContribuinte(run.establishment.cnpj);
+    if (row && readRowCnpj(row) !== run.establishment.cnpj) row = null;
+  }
+
   if (!row) {
     if (run.discovery) {
       // Não é essa procuração — pede pro background tentar a próxima da fila (history.back() + reclique).
       await chrome.runtime.sendMessage({ type: "DISCOVERY_NOT_FOUND" });
       return;
+    }
+    // Conferência/download: a empresa foi pedida nesta procuração há pouco, não há o que procurar nas outras
+    // (10/11/2026: cada volta por todas as SUBFIN levava ~4 min). Pula para a próxima empresa da esteira.
+    if (run.mode === "TRACK") {
+      throw new Error(`EMPRESA_NAO_ENCONTRADA_NA_PROCURACAO: ${run.establishment.cnpj} não apareceu na procuração ${run.accessContext?.grupo ?? "?"}/${run.accessContext?.posicao ?? "?"} — conferência pulada`);
     }
     // A posição veio do índice e a empresa não está lá (visto ao vivo, 2026-10-13: 19 empresas indexadas na
     // varredura de 30/09 não apareciam mais nas procurações anotadas). Em vez de falhar, procura nas outras
