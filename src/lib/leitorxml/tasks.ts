@@ -242,14 +242,19 @@ export async function summarizeTrackingNeeds(db: SupabaseClient, options: { stal
 export async function claimNextTrackingBatch(db: SupabaseClient, userId: string, options: { excludeEstablishmentIds?: string[]; onlyEstablishmentId?: string; staleHours?: number; now?: Date } = {}) {
   const now = options.now ?? new Date();
   const excluded = new Set(options.excludeEstablishmentIds ?? []);
-  let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]);
-  // `onlyEstablishmentId`: a esteira conferindo a aba Solicitações da empresa que ACABOU de solicitar (a trava é do mesmo usuário).
-  if (options.onlyEstablishmentId) query = query.eq("establishment_id", options.onlyEstablishmentId);
-  const { data, error } = await query.order("updated_at", { ascending: true }).limit(300);
-  if (error) throw new Error("TRACKING_LOOKUP_FAILED");
+  // Empresas com algo PRONTO PARA BAIXAR vão primeiro (10/11/2026: no pico, 324 pedidos "processando" na frente
+  // de 16 prontos — a esteira gastava a rodada conferindo quem ainda não tinha o que baixar).
+  const lookup = (statuses: string[]) => {
+    let query = db.from("xml_collection_tasks").select(TRACKING_COLUMNS).in("status", statuses);
+    // `onlyEstablishmentId`: a esteira conferindo a aba Solicitações da empresa que ACABOU de solicitar (a trava é do mesmo usuário).
+    if (options.onlyEstablishmentId) query = query.eq("establishment_id", options.onlyEstablishmentId);
+    return query.order("updated_at", { ascending: true }).limit(300);
+  };
+  const [ready, others] = await Promise.all([lookup(["PRONTO_PARA_BAIXAR"]), lookup(["SOLICITADO", "PROCESSANDO_SEFAZ"])]);
+  if (ready.error || others.error) throw new Error("TRACKING_LOOKUP_FAILED");
 
-  const byEstablishment = new Map<string, NonNullable<typeof data>>();
-  for (const row of data ?? []) {
+  const byEstablishment = new Map<string, NonNullable<typeof ready.data>>();
+  for (const row of [...(ready.data ?? []), ...(others.data ?? [])]) {
     if (excluded.has(row.establishment_id) || !isDueForTracking(row, options.staleHours, now)) continue;
     byEstablishment.set(row.establishment_id, [...(byEstablishment.get(row.establishment_id) ?? []), row]);
   }
