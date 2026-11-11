@@ -28,6 +28,13 @@ export async function POST(request: Request) {
       entity: "xml_watch_establishment", entity_id: input.establishmentId ?? null,
       safe_metadata: { tipo: input.tipo, motivo: input.motivo, rastro: input.rastro ?? null, versao: request.headers.get("x-leitor-versao") },
     });
+    // A conferência pega as empresas pelo updated_at mais antigo. Visita que falhou não mexia nele, então as mesmas
+    // empresas (fora da procuração anotada) vinham primeiro em toda passada, davam 3 falhas seguidas e a esteira
+    // parava sem conferir o resto (10/11/2026: 189 pedidos parados atrás de 3 empresas). Joga a empresa pro fim da fila.
+    if (input.tipo === "VISITA_ACOMPANHAMENTO_FALHOU" && input.establishmentId) {
+      await db.from("xml_collection_tasks").update({ updated_at: new Date().toISOString() })
+        .eq("establishment_id", input.establishmentId).in("status", ["SOLICITADO", "PROCESSANDO_SEFAZ", "PRONTO_PARA_BAIXAR"]);
+    }
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Diagnóstico inválido." }, { status: 400 });
