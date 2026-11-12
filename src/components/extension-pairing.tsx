@@ -6,8 +6,8 @@ import { withBasePath } from "@/lib/base-path";
 type Estado = "verificando" | "nao-detectada" | "pronta" | "conectando" | "conectada" | "erro";
 
 /**
- * Liga a extensão a este portal sem ninguém copiar token: o servidor gera um token novo (o antigo de pareamento é
- * revogado), esta página o entrega à extensão por postMessage (mesma origem) e ele nunca é mostrado na tela.
+ * Liga a extensão a este portal sem ninguém copiar token: o servidor gera um token novo só deste Chrome (os de outros PCs
+ * continuam valendo), esta página o entrega à extensão por postMessage (mesma origem) e ele nunca é mostrado na tela.
  */
 export function ExtensionPairing() {
   const [estado, setEstado] = useState<Estado>("verificando");

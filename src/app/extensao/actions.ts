@@ -30,11 +30,23 @@ export async function gerarToken(_prevState: GerarTokenState, formData: FormData
 
 const PAIRING_LABEL = "Pareamento automático";
 
-/** "Conectar esta extensão": revoga o token de pareamento anterior deste usuário e cria um novo, entregue à extensão pela própria página (nunca exibido). */
+const DIA = 24 * 60 * 60 * 1000;
+/** Conexão sem uso há tanto tempo é de um PC/Chrome que não usa mais a extensão (ou que já foi reconectado). */
+const PARADA_DIAS = 30;
+
+/**
+ * "Conectar esta extensão": cria uma conexão nova para este Chrome, entregue à extensão pela própria página (nunca exibida).
+ * Cada PC tem a sua: conectar aqui não derruba a de outro PC do mesmo usuário (casa e escritório ao mesmo tempo).
+ * Só saem as conexões paradas: sem uso há 30 dias, ou criadas há mais de 1 dia e nunca usadas.
+ */
 export async function parearExtensao(): Promise<{ token: string }> {
   const session = await requireOfficeSession();
   const db = createAdminClient();
-  await db.from("xml_leitor_extension_tokens").update({ revoked_at: new Date().toISOString() }).eq("user_id", session.userId).eq("label", PAIRING_LABEL).is("revoked_at", null);
+  const agora = Date.now();
+  const base = () => db.from("xml_leitor_extension_tokens").update({ revoked_at: new Date(agora).toISOString() })
+    .eq("user_id", session.userId).eq("label", PAIRING_LABEL).is("revoked_at", null);
+  await base().lt("last_used_at", new Date(agora - PARADA_DIAS * DIA).toISOString());
+  await base().is("last_used_at", null).lt("created_at", new Date(agora - DIA).toISOString());
   const result = await createExtensionToken(db, session.userId, PAIRING_LABEL);
   await db.from("audit_logs").insert({
     actor_user_id: session.userId,
