@@ -702,6 +702,13 @@ async function pairFromPortal(message, sender) {
   if (typeof message.token !== "string" || !message.token.startsWith("lxml_") || typeof message.apiBaseUrl !== "string") return { ok: false, error: "DADOS_INVALIDOS" };
   const apiOrigin = new URL(message.apiBaseUrl).origin;
   if (apiOrigin !== senderOrigin) return { ok: false, error: "ENDERECO_DIFERENTE_DA_ORIGEM" };
+  // Reconectar neste Chrome: a conexão antiga dele é desligada no servidor (antes ficava valendo até 30 dias sem uso).
+  // O token antigo só vai para o mesmo portal onde ele valia. Se falhar, segue: o servidor ainda limpa as paradas.
+  const old = await getSettings();
+  const oldOrigin = (() => { try { return new URL(old.apiBaseUrl).origin; } catch { return null; } })();
+  if (old.apiToken && old.apiToken !== message.token && oldOrigin === senderOrigin) {
+    await fetch(`${old.apiBaseUrl}/api/leitorxml/extensao/desconectar`, { method: "POST", headers: { Authorization: `Bearer ${old.apiToken}` } }).catch(() => {});
+  }
   await chrome.storage.local.set({ apiBaseUrl: message.apiBaseUrl.replace(/\/$/, ""), apiToken: message.token });
   await setAutoStatus({ state: "MANUAL" }); // limpa avisos antigos (ex.: "token inválido")
   chrome.alarms.create(AUTO_TRACK_SOON_ALARM, { delayInMinutes: 1 }); // já confere se há algo a baixar
