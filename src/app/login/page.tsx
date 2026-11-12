@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { PORTAL_URL, portalLoginUrl } from "@/lib/auth/portal";
 import { officeLogin } from "./actions";
+import { PasswordInput } from "@/components/password-input";
 
 export const metadata = { title: "Entrar" };
 const errors: Record<string, string> = {
@@ -28,7 +29,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="password" className="text-sm font-medium text-black/80">Senha</label>
-            <input id="password" name="password" type="password" autoComplete="current-password" required className="rounded border border-black/15 px-3 py-2 text-sm outline-none focus:border-[#082240]" />
+            <PasswordInput id="password" name="password" autoComplete="current-password" required className="rounded border border-black/15 px-3 py-2 text-sm outline-none focus:border-[#082240]" />
           </div>
           <button type="submit" className="mt-2 rounded bg-[#082240] px-3 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Entrar</button>
         </form>
