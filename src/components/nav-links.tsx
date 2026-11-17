@@ -12,7 +12,7 @@ const ITEMS = [
 export function NavLinks() {
   const pathname = usePathname() ?? "";
   return (
-    <nav className="flex items-center gap-1 text-sm" aria-label="Principal">
+    <nav className="flex items-center gap-1" aria-label="Principal">
       {ITEMS.map((item) => {
         const active = item.match.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
         return (
@@ -20,7 +20,7 @@ export function NavLinks() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`rounded-md px-3 py-1.5 transition-colors ${active ? "bg-[#082240] font-medium text-white" : "text-black/60 hover:bg-black/5 hover:text-black"}`}
+            className="nav-link"
           >
             {item.label}
           </Link>

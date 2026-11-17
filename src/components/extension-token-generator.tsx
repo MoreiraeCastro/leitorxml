@@ -20,27 +20,27 @@ export function ExtensionTokenGenerator() {
   }
 
   return (
-    <div className="rounded border border-black/10 bg-white p-4">
+    <div>
       <form action={formAction} className="flex items-end gap-2">
         <div className="flex-1">
-          <label htmlFor="label" className="block text-xs text-black/50">Rótulo (opcional, ex.: &quot;notebook Paulo&quot;)</label>
-          <input id="label" name="label" maxLength={120} className="mt-1 w-full rounded border border-black/15 px-2 py-1 text-sm" />
+          <label htmlFor="label" className="label">Rótulo (opcional, ex.: &quot;notebook Paulo&quot;)</label>
+          <input id="label" name="label" maxLength={120} className="input mt-1.5 w-full" />
         </div>
-        <button type="submit" disabled={pending} className="rounded bg-[#082240] px-3 py-1.5 text-sm text-white disabled:opacity-50">
+        <button type="submit" disabled={pending} className="btn h-[38px]">
           {pending ? "Gerando…" : "Gerar novo token"}
         </button>
       </form>
 
-      {state.error && <p className="mt-3 text-sm text-red-700">{state.error}</p>}
+      {state.error && <p className="mt-3 text-[13px] text-[var(--danger)]">{state.error}</p>}
 
       {state.token && (
-        <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3">
-          <p className="text-xs font-medium text-amber-800">
+        <div className="callout callout-warn mt-4">
+          <p className="text-[12.5px] font-medium">
             Copie agora — esse valor só aparece uma vez. Cole em &quot;Token&quot; no popup da extensão.
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <input readOnly value={state.token} className="flex-1 rounded border border-amber-300 bg-white px-2 py-1 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-            <button type="button" onClick={copyToken} className="rounded border border-amber-400 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100">
+            <input readOnly value={state.token} className="input input-sm input-mono flex-1 !bg-white !text-[var(--ink-strong)]" onFocus={(e) => e.currentTarget.select()} />
+            <button type="button" onClick={copyToken} className="btn btn-secondary btn-sm">
               {copied ? "Copiado!" : "Copiar"}
             </button>
           </div>

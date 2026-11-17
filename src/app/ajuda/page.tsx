@@ -1,20 +1,19 @@
 import Link from "next/link";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
-import { Shell } from "@/components/shell";
+import { PageHeader, Shell } from "@/components/shell";
 
 export const metadata = { title: "Ajuda" };
 
 function Topic({ title, tag, open, children }: { title: string; tag?: string; open?: boolean; children: React.ReactNode }) {
   return (
-    <details open={open} className="group rounded-xl border border-black/10 bg-white">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
-        <span className="font-medium text-[#082240]">{title}</span>
-        <span className="flex items-center gap-3">
-          {tag && <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-xs text-black/50">{tag}</span>}
-          <span className="text-black/40 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+    <details open={open} className="card disclosure">
+      <summary>
+        <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span>{title}</span>
+          {tag && <span className="pill font-medium">{tag}</span>}
         </span>
       </summary>
-      <div className="border-t border-black/5 px-5 py-4 text-sm leading-relaxed text-black/75">{children}</div>
+      <div className="border-t border-[var(--line)] px-5 py-4 text-[13.5px] leading-relaxed text-[var(--ink)]">{children}</div>
     </details>
   );
 }
@@ -35,15 +34,15 @@ export default async function AjudaPage() {
   const session = await requireOfficeSessionOrRedirect();
   return (
     <Shell session={session}>
-      <h1 className="text-xl font-semibold text-[#082240]">Ajuda</h1>
+      <PageHeader title="Ajuda" subtitle="Rotina, revisão e o que fazer quando algo dá errado." />
 
-      <section className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
-        <h2 className="font-semibold">Em 30 segundos</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
+      <section className="callout callout-ok px-5 py-4">
+        <h2 className="text-[14px] font-semibold">Em 30 segundos</h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13.5px]">
           <li>Abra o Chrome e entre no <strong>Fisco Fácil</strong> com o certificado. Deixe a aba aberta.</li>
           <li>Veja o ícone da extensão: sem “!” vermelho, está tudo certo.</li>
           <li>Do <strong>dia 10</strong> em diante, clique em <strong>“Trabalhar agora”</strong> para pedir tudo.</li>
-          <li>Em <Link href="/painel" className="underline">Início</Link>, revise os arquivos e marque como revisados.</li>
+          <li>Em <Link href="/painel" className="link">Início</Link>, revise os arquivos e marque como revisados.</li>
         </ol>
       </section>
 
@@ -54,63 +53,63 @@ export default async function AjudaPage() {
             <li><strong>Deixe a aba aberta.</strong> Pode usar o resto do computador, mas não feche essa aba.</li>
             <li>Clique no ícone da extensão quando quiser ver como está:
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li><span className="font-medium text-emerald-700">Verde</span>: nada a fazer.</li>
-                <li><span className="font-medium text-sky-700">Azul girando</span>: trabalhando. Não mexa na aba do Fisco Fácil.</li>
-                <li><span className="font-medium text-amber-700">Amarelo</span>: entre no Fisco Fácil.</li>
-                <li><span className="font-medium text-red-700">Vermelho</span>: veja “Algo deu errado”, abaixo.</li>
+                <li><span className="font-medium text-[var(--ok)]">Verde</span>: nada a fazer.</li>
+                <li><span className="font-medium text-[var(--info)]">Azul girando</span>: trabalhando. Não mexa na aba do Fisco Fácil.</li>
+                <li><span className="font-medium text-[var(--warn)]">Amarelo</span>: entre no Fisco Fácil.</li>
+                <li><span className="font-medium text-[var(--danger)]">Vermelho</span>: veja “Algo deu errado”, abaixo.</li>
               </ul>
             </li>
           </Steps>
-          <p className="mt-3 text-black/60">A extensão confere sozinha a cada uns 20 minutos (seg a sex, 7h às 20h). Quando há arquivo pronto, ela baixa, valida e salva na pasta do SharePoint.</p>
+          <p className="mt-3 text-[var(--text-2)]">A extensão confere sozinha a cada uns 20 minutos (seg a sex, 7h às 20h). Quando há arquivo pronto, ela baixa, valida e salva na pasta do SharePoint.</p>
         </Topic>
 
         <Topic title="Pedir tudo do mês" tag="a partir do dia 10">
           <p className="mb-2">O sistema cria as 3 tarefas de cada empresa (NF-e emitente, NF-e destinatário e NFC-e) sozinho a partir do dia 10. Também dá para criar em Início → <em>Criar tarefas do mês</em>.</p>
           <Steps>
-            <li>Em <Link href="/painel" className="underline">Início</Link>, veja “Pedir N tarefas”.</li>
+            <li>Em <Link href="/painel" className="link">Início</Link>, veja “Pedir N tarefas”.</li>
             <li>Entre no Fisco Fácil com o certificado.</li>
             <li>Na extensão, clique em <strong>“Trabalhar agora”</strong>. Ela pergunta logo no começo se é para pedir também as tarefas que faltam: clique em OK.</li>
             <li>Ela primeiro baixa o que já está pronto e, na sequência, pede o que falta, de empresa em empresa, tudo num clique só. Não mexa na aba até acabar.</li>
             <li>Para interromper, clique em <strong>“Parar depois da etapa atual”</strong>. O que faltar continua na próxima vez.</li>
           </Steps>
-          <p className="mt-3 text-amber-800">Pedir cria solicitações reais no Fisco Fácil. Se ele demorar demais ou mostrar bloqueio, pare e avise o João.</p>
-          <p className="mt-2 text-black/60">O Fisco Fácil leva até <strong>5 dias</strong> para processar. Depois de pronto, o arquivo fica <strong>7 dias</strong>; passando disso, vira “Expirada” e precisa de “Pedir de novo”.</p>
+          <p className="mt-3 text-[var(--warn)]">Pedir cria solicitações reais no Fisco Fácil. Se ele demorar demais ou mostrar bloqueio, pare e avise o João.</p>
+          <p className="mt-2 text-[var(--text-2)]">O Fisco Fácil leva até <strong>5 dias</strong> para processar. Depois de pronto, o arquivo fica <strong>7 dias</strong>; passando disso, vira “Expirada” e precisa de “Pedir de novo”.</p>
         </Topic>
 
         <Topic title="Revisar" tag="quem confere">
           <Steps>
-            <li>Em <Link href="/painel" className="underline">Início</Link>, clique na ficha <strong>Para revisar</strong>.</li>
+            <li>Em <Link href="/painel" className="link">Início</Link>, clique na ficha <strong>Para revisar</strong>.</li>
             <li>Clique na etiqueta verde <strong>Revisar</strong> de uma empresa.</li>
             <li>Confira os documentos e a validação (<strong>OK</strong> é o esperado). Se quiser, clique em <strong>Baixar ZIP</strong>.</li>
             <li>Estando certo, clique em <strong>Marcar como revisado</strong>.</li>
           </Steps>
-          <p className="mt-3 text-black/60">Se a validação disser QUARENTENA ou REJEITADO, não marque como revisado: avise o João.</p>
+          <p className="mt-3 text-[var(--text-2)]">Se a validação disser QUARENTENA ou REJEITADO, não marque como revisado: avise o João.</p>
         </Topic>
 
         <Topic title="Onde ficam os arquivos">
-          <p>No SharePoint, em <code>Tecnologia\Leitor de XML - Zips</code>: <code>CNPJ - Razão Social \ AAAA-MM \ arquivo.zip</code>. Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link> você vê quantos já foram entregues.</p>
-          <p className="mt-2 text-black/60">Em todo PC com a extensão conectada, os ZIPs ficam na pasta <code>Downloads\Leitor de XML</code>, para revisar. Nos PCs com OneDrive configurado (veja “PC com OneDrive”), essa mesma pasta sobe sozinha para o SharePoint. Também dá para baixar o ZIP na tela da empresa, em <strong>Baixar ZIP</strong>.</p>
+          <p>No SharePoint, em <code>Tecnologia\Leitor de XML - Zips</code>: <code>CNPJ - Razão Social \ AAAA-MM \ arquivo.zip</code>. Em <Link href="/conexoes?aba=sharepoint" className="link">Conexões → SharePoint</Link> você vê quantos já foram entregues.</p>
+          <p className="mt-2 text-[var(--text-2)]">Em todo PC com a extensão conectada, os ZIPs ficam na pasta <code>Downloads\Leitor de XML</code>, para revisar. Nos PCs com OneDrive configurado (veja “PC com OneDrive”), essa mesma pasta sobe sozinha para o SharePoint. Também dá para baixar o ZIP na tela da empresa, em <strong>Baixar ZIP</strong>.</p>
         </Topic>
 
         <Topic title="Algo deu errado" tag="problemas comuns" open>
-          <div className="overflow-x-auto rounded-lg border border-black/10">
-            <table className="w-full border-collapse text-sm">
+          <div className="table-wrap">
+            <table className="tbl">
               <tbody>
                 {PROBLEMS.map(([sintoma, acao]) => (
-                  <tr key={sintoma} className="border-b border-black/5 align-top last:border-0">
-                    <td className="w-2/5 px-4 py-3 font-medium text-black/80">{sintoma}</td>
-                    <td className="px-4 py-3">{acao}</td>
+                  <tr key={sintoma} className="align-top">
+                    <td className="cell-title w-2/5">{sintoma}</td>
+                    <td>{acao}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-black/60">Ao pedir ajuda, mande sempre um print do popup da extensão.</p>
+          <p className="mt-3 text-[var(--text-2)]">Ao pedir ajuda, mande sempre um print do popup da extensão.</p>
         </Topic>
 
         <Topic title="Instalar a extensão" tag="uma vez por PC">
           <Steps>
-            <li>No Chrome deste computador, entre no portal, abra <Link href="/conexoes" className="underline">Conexões</Link> e clique em <strong>Baixar o instalador</strong>.</li>
+            <li>No Chrome deste computador, entre no portal, abra <Link href="/conexoes" className="link">Conexões</Link> e clique em <strong>Baixar o instalador</strong>.</li>
             <li>Quando o Chrome avisar que o arquivo pode ser perigoso, clique em <strong>Manter</strong>. Depois abra <code>instalar-leitor-de-xml.bat</code> pela barra de downloads. Se o Windows mostrar “O Windows protegeu seu computador”, clique em <strong>Mais informações</strong> e depois em <strong>Executar assim mesmo</strong>.</li>
             <li>Uma janela preta aparece por alguns segundos e depois abre o Chrome na página de extensões, com uma mensagem na tela. Faça o que ela pede:
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
@@ -122,24 +121,24 @@ export default async function AjudaPage() {
             <li>Clique no ícone de quebra-cabeça do Chrome (canto superior direito) e no <strong>alfinete</strong> ao lado de “Leitor de XML”, para o ícone ficar sempre visível.</li>
             <li><strong>Feche o Chrome por completo</strong> (todas as janelas e, se houver, o ícone do Chrome perto do relógio → Sair) e abra de novo. Só assim ele enxerga o atualizador.</li>
           </Steps>
-          <p className="mt-3 text-black/60">As pastas <code>C:\LeitorXML</code> e <code>C:\LeitorXML-atualizador</code> precisam ficar sempre ali: não apague nem mude de lugar. Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”: feche-o ou clique em <strong>Cancelar</strong>.</p>
-          <p className="mt-2 text-black/60">Versões novas chegam sozinhas: a extensão confere a cada 30 minutos e se atualiza quando não está trabalhando. Para atualizar na hora, no popup: <strong>Mais opções → Atualizar extensão</strong>. Só precisa rodar o instalador de novo num PC novo, ou se o popup disser que o atualizador não está instalado.</p>
+          <p className="mt-3 text-[var(--text-2)]">As pastas <code>C:\LeitorXML</code> e <code>C:\LeitorXML-atualizador</code> precisam ficar sempre ali: não apague nem mude de lugar. Ao reabrir o Chrome, pode aparecer o aviso “Desativar extensões do modo de desenvolvedor”: feche-o ou clique em <strong>Cancelar</strong>.</p>
+          <p className="mt-2 text-[var(--text-2)]">Versões novas chegam sozinhas: a extensão confere a cada 30 minutos e se atualiza quando não está trabalhando. Para atualizar na hora, no popup: <strong>Mais opções → Atualizar extensão</strong>. Só precisa rodar o instalador de novo num PC novo, ou se o popup disser que o atualizador não está instalado.</p>
         </Topic>
 
         <Topic title="Preparar o PC" tag="depois de instalar a extensão">
           <Steps>
-            <li>Em <Link href="/conexoes" className="underline">Conexões</Link>, clique em <strong>Conectar esta extensão</strong>.</li>
+            <li>Em <Link href="/conexoes" className="link">Conexões</Link>, clique em <strong>Conectar esta extensão</strong>.</li>
             <li>No popup da extensão, ligue <strong>Acompanhamento automático</strong> (só no PC de quem opera).</li>
             <li>Nas configurações de energia do Windows, deixe o PC <strong>nunca suspender</strong> na tomada.</li>
           </Steps>
-          <p className="mt-3 text-black/60">Pronto. Os ZIPs passam a aparecer sozinhos em <code>Downloads\Leitor de XML</code>.</p>
+          <p className="mt-3 text-[var(--text-2)]">Pronto. Os ZIPs passam a aparecer sozinhos em <code>Downloads\Leitor de XML</code>.</p>
         </Topic>
 
         <Topic title="PC com OneDrive" tag="opcional, só um PC">
           <p className="mb-2">Em um PC com OneDrive, a pasta <code>Downloads\Leitor de XML</code> pode ser ligada ao SharePoint: tudo o que cai nela sobe sozinho, inclusive os ZIPs baixados por outros PCs. Basta esse PC ficar ligado, com o Chrome aberto e o OneDrive sincronizando.</p>
           <Steps>
             <li>Sincronize a biblioteca “arquivos” do SharePoint no OneDrive deste PC.</li>
-            <li>Em <Link href="/conexoes?aba=sharepoint" className="underline">Conexões → SharePoint</Link>, copie o comando e cole no PowerShell.</li>
+            <li>Em <Link href="/conexoes?aba=sharepoint" className="link">Conexões → SharePoint</Link>, copie o comando e cole no PowerShell.</li>
             <li>No popup da extensão, em Configurações avançadas, ligue <strong>Este PC tem OneDrive: enviar os ZIPs ao SharePoint</strong>.</li>
           </Steps>
         </Topic>

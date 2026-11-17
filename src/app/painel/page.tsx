@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Shell } from "@/components/shell";
+import { EmptyState, Shell } from "@/components/shell";
 import { Pill } from "@/components/pill";
 import { withBasePath } from "@/lib/base-path";
 import { previousClosedCompetencia } from "@/lib/leitorxml/tasks";
@@ -23,11 +23,11 @@ type Row = {
 };
 
 const CARD_TONE = {
-  ok: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  info: "border-sky-200 bg-sky-50 text-sky-900",
-  warn: "border-amber-200 bg-amber-50 text-amber-900",
-  danger: "border-red-200 bg-red-50 text-red-900",
-  neutral: "border-black/10 bg-white text-black/80",
+  ok: "callout-ok",
+  info: "callout-info",
+  warn: "callout-warn",
+  danger: "callout-danger",
+  neutral: "",
 } as const;
 
 function shiftMonth(ano: number, mes: number, delta: number) {
@@ -43,15 +43,15 @@ function href(ano: number, mes: number, filter: FilterKey, q: string) {
 }
 
 function TaskCell({ task }: { task?: CompanyTask }) {
-  if (!task) return <span className="text-black/25">—</span>;
+  if (!task) return <span className="text-[#cbd5e1]">—</span>;
   return (
     <div className="flex flex-col items-start gap-1">
-      <Link href={`/pedidos/${task.id}`} title={task.erro ?? undefined} className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#082240]/40">
+      <Link href={`/pedidos/${task.id}`} title={task.erro ?? undefined} className="rounded-full">
         <Pill phase={task.phase}>{pillLabel(task.status)}</Pill>
       </Link>
       {canRequestAgain(task.status) && (
         <form action={pedirDeNovo.bind(null, task.id)}>
-          <button type="submit" className="text-xs font-medium text-[#082240] underline-offset-2 hover:underline">Pedir de novo</button>
+          <button type="submit" className="link text-[12px]">Pedir de novo</button>
         </form>
       )}
     </div>
@@ -90,48 +90,50 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
 
   return (
     <Shell session={session}>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Link href={href(previous.ano, previous.mes, "TUDO", "")} aria-label="Mês anterior" className="rounded-md px-2 py-1 text-black/50 hover:bg-black/5">←</Link>
-          <h1 className="min-w-[10rem] text-center text-xl font-semibold capitalize text-[#082240]">{competencia}</h1>
-          <Link href={href(next.ano, next.mes, "TUDO", "")} aria-label="Próximo mês" className="rounded-md px-2 py-1 text-black/50 hover:bg-black/5">→</Link>
+      <div className="page-head">
+        <div>
+          <div className="flex items-center gap-1">
+            <Link href={href(previous.ano, previous.mes, "TUDO", "")} aria-label="Mês anterior" className="btn btn-icon btn-quiet">←</Link>
+            <h1 className="page-title min-w-[10rem] text-center capitalize">{competencia}</h1>
+            <Link href={href(next.ano, next.mes, "TUDO", "")} aria-label="Próximo mês" className="btn btn-icon btn-quiet">→</Link>
+          </div>
+          <p className="page-sub tabular">{counts.empresas > 0 ? `${counts.empresasRecebidas} de ${counts.empresas} empresas recebidas` : "Coleta de NF-e e NFC-e do mês, empresa por empresa."}</p>
         </div>
-        {counts.empresas > 0 && <span className="text-sm text-black/60">{counts.empresasRecebidas} de {counts.empresas} empresas recebidas</span>}
-        <details className="relative ml-auto">
-          <summary className="cursor-pointer list-none rounded-md border border-black/15 bg-white px-3 py-1.5 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">+ Criar tarefas do mês</summary>
-          <form action={criarTarefasDoMes} className="absolute right-0 z-10 mt-2 w-72 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
-            <p className="text-sm text-black/70">Cria as 3 tarefas de cada empresa ativa. O que já existe não duplica.</p>
+        <details className="relative">
+          <summary className="btn btn-secondary list-none [&::-webkit-details-marker]:hidden">+ Criar tarefas do mês</summary>
+          <form action={criarTarefasDoMes} className="popover absolute right-0 z-10 mt-2 w-80 p-4">
+            <p className="text-[13px] text-[var(--text-2)]">Cria as 3 tarefas de cada empresa ativa. O que já existe não duplica.</p>
             <div className="mt-3 flex items-end gap-2">
-              <label className="text-xs text-black/50">Ano<input name="competenciaAno" type="number" defaultValue={ano} className="mt-1 block w-20 rounded border border-black/15 px-2 py-1 text-sm text-black" /></label>
-              <label className="text-xs text-black/50">Mês<input name="competenciaMes" type="number" min={1} max={12} defaultValue={mes} className="mt-1 block w-16 rounded border border-black/15 px-2 py-1 text-sm text-black" /></label>
-              <button type="submit" className="ml-auto rounded-md bg-[#082240] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#123a5d]">Criar</button>
+              <label className="label">Ano<input name="competenciaAno" type="number" defaultValue={ano} className="input input-sm tabular mt-1.5 block w-20" /></label>
+              <label className="label">Mês<input name="competenciaMes" type="number" min={1} max={12} defaultValue={mes} className="input input-sm tabular mt-1.5 block w-16" /></label>
+              <button type="submit" className="btn btn-sm ml-auto h-[34px]">Criar</button>
             </div>
-            <Link href="/extracao/nova" className="mt-3 block text-xs text-black/50 underline-offset-2 hover:underline">Escolher só algumas empresas</Link>
+            <Link href="/extracao/nova" className="link mt-3 block text-[12px]">Escolher só algumas empresas</Link>
           </form>
         </details>
       </div>
 
       {counts.empresas > 0 && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Empresas recebidas">
-          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent}%` }} />
+        <div className="meter -mt-3" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Empresas recebidas">
+          <span style={{ width: `${percent}%` }} />
         </div>
       )}
 
-      {error && <p className="mt-4 text-sm text-red-700">Não foi possível carregar as tarefas.</p>}
+      {error && <p role="alert" className="callout callout-danger mt-4">Não foi possível carregar as tarefas.</p>}
 
-      <section className={`mt-5 flex flex-wrap items-center gap-4 rounded-xl border px-5 py-4 ${CARD_TONE[action.tone]}`}>
+      <section className={`callout mt-5 flex flex-wrap items-center gap-4 px-5 py-4 ${CARD_TONE[action.tone]}`}>
         <div className="min-w-[14rem] flex-1">
-          <div className="text-base font-semibold">{action.title}</div>
-          <div className="mt-0.5 text-sm opacity-80">{action.detail}</div>
+          <div className="text-[14px] font-semibold">{action.title}</div>
+          <div className="mt-0.5 text-[13px] opacity-85">{action.detail}</div>
         </div>
         {action.cta && (action.cta.external
-          ? <a href={action.cta.href} target="_blank" rel="noreferrer" className="rounded-md bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">{action.cta.label}</a>
-          : <Link href={href(ano, mes, parseFilter(action.cta.href.replace("?f=", "")), "")} className="rounded-md bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">{action.cta.label}</Link>)}
+          ? <a href={action.cta.href} target="_blank" rel="noreferrer" className="btn">{action.cta.label}</a>
+          : <Link href={href(ano, mes, parseFilter(action.cta.href.replace("?f=", "")), "")} className="btn">{action.cta.label}</Link>)}
       </section>
 
       {counts.empresas > 0 && (
         <>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-6 flex flex-wrap items-center gap-2">
             {FILTERS.map((item) => {
               const active = item.key === filter;
               const danger = item.key === "PROBLEMA" && chipCount.PROBLEMA > 0;
@@ -139,40 +141,49 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
                 <Link
                   key={item.key}
                   href={href(ano, mes, item.key, q)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${active ? "border-[#082240] bg-[#082240] text-white" : danger ? "border-red-200 bg-white text-red-700 hover:bg-red-50" : "border-black/15 bg-white text-black/70 hover:bg-black/[0.03]"}`}
+                  aria-current={active ? "true" : undefined}
+                  className={`chip ${danger && !active ? "chip-danger" : ""}`}
                 >
-                  {item.label} <b className="font-semibold">{chipCount[item.key]}</b>
+                  {item.label} <b className="chip-count">{chipCount[item.key]}</b>
                 </Link>
               );
             })}
-            <form action={withBasePath("/painel")} className="ml-auto">
+            <form action={withBasePath("/painel")} className="search ml-auto">
               <input type="hidden" name="ano" value={ano} />
               <input type="hidden" name="mes" value={mes} />
               {filter !== "TUDO" && <input type="hidden" name="f" value={filter} />}
-              <input name="q" defaultValue={q} placeholder="Buscar empresa ou CNPJ" className="w-56 rounded-full border border-black/15 bg-white px-3 py-1 text-sm" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+              <input name="q" defaultValue={q} placeholder="Buscar empresa ou CNPJ" aria-label="Buscar empresa ou CNPJ" className="input input-sm w-60" />
             </form>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-xl border border-black/10 bg-white">
-            <table className="w-full border-collapse text-sm">
+          <div className="table-wrap mt-3">
+            <table className="tbl">
               <thead>
-                <tr className="border-b border-black/10 text-left text-xs text-black/50">
-                  <th className="px-4 py-2.5 font-medium">Empresa</th>
-                  {SLOTS.map((slot) => <th key={slot.key} className="px-4 py-2.5 font-medium">{slot.label}</th>)}
+                <tr>
+                  <th>Empresa</th>
+                  {SLOTS.map((slot) => <th key={slot.key}>{slot.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.establishmentId} className="border-b border-black/5 align-top last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-[#082240]">{row.razaoSocial}</div>
-                      <div className="text-xs text-black/40">{row.cnpj}</div>
+                  <tr key={row.establishmentId} className="align-top">
+                    <td>
+                      <div className="cell-title">{row.razaoSocial}</div>
+                      <div className="cell-sub">{row.cnpj}</div>
                     </td>
-                    {SLOTS.map((slot) => <td key={slot.key} className="px-4 py-3"><TaskCell task={row.tasks[slot.key]} /></td>)}
+                    {SLOTS.map((slot) => <td key={slot.key}><TaskCell task={row.tasks[slot.key]} /></td>)}
                   </tr>
                 ))}
                 {!rows.length && (
-                  <tr><td colSpan={4} className="px-4 py-10 text-center text-black/50">Nenhuma empresa nesse filtro. <Link href={href(ano, mes, "TUDO", "")} className="underline">Ver todas</Link></td></tr>
+                  <tr className="no-hover"><td colSpan={4}>
+                    <EmptyState
+                      icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>}
+                      title="Nenhuma empresa nesse filtro"
+                      text="Troque o filtro ou limpe a busca para ver as outras empresas."
+                      action={<Link href={href(ano, mes, "TUDO", "")} className="btn btn-secondary">Ver todas</Link>}
+                    />
+                  </td></tr>
                 )}
               </tbody>
             </table>

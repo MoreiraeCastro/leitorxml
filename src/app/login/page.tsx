@@ -15,23 +15,26 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (PORTAL_URL) redirect(portalLoginUrl());
   const { error } = await searchParams;
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f4f6f4] p-6">
-      <section className="w-full max-w-sm rounded-lg border border-black/10 bg-white p-8 shadow-sm">
-        <h1 className="text-lg font-semibold text-[#082240]">Leitor de XML</h1>
-        <p className="mt-1 text-sm text-black/60">Acesso da equipe Moreira &amp; Castro.</p>
+    <main className="flex min-h-screen items-center justify-center bg-[var(--canvas)] p-6">
+      <section className="card w-full max-w-sm p-8">
+        <span className="app-mark" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 14l2 2 4-4" /></svg>
+        </span>
+        <h1 className="page-title mt-4">Leitor de XML</h1>
+        <p className="page-sub">Acesso da equipe Moreira &amp; Castro.</p>
         {error && errors[error] && (
-          <p role="alert" className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errors[error]}</p>
+          <p role="alert" className="callout callout-danger mt-4">{errors[error]}</p>
         )}
         <form action={officeLogin} className="mt-6 flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="email" className="text-sm font-medium text-black/80">Email</label>
-            <input id="email" name="email" type="email" autoComplete="username" required className="rounded border border-black/15 px-3 py-2 text-sm outline-none focus:border-[#082240]" />
+          <div className="field">
+            <label htmlFor="email" className="label">Email</label>
+            <input id="email" name="email" type="email" autoComplete="username" required className="input" />
           </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="password" className="text-sm font-medium text-black/80">Senha</label>
-            <PasswordInput id="password" name="password" autoComplete="current-password" required className="rounded border border-black/15 px-3 py-2 text-sm outline-none focus:border-[#082240]" />
+          <div className="field">
+            <label htmlFor="password" className="label">Senha</label>
+            <PasswordInput id="password" name="password" autoComplete="current-password" required className="input" />
           </div>
-          <button type="submit" className="mt-2 rounded bg-[#082240] px-3 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Entrar</button>
+          <button type="submit" className="btn btn-block mt-2">Entrar</button>
         </form>
       </section>
     </main>

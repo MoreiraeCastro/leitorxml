@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Shell } from "@/components/shell";
+import { EmptyState, PageHeader, Shell } from "@/components/shell";
 import { STATUS_LABELS, canRequestAgain, competenciaLabel, documentLabel, roleLabel, statusTone } from "@/lib/leitorxml/status-labels";
 import type { XmlCollectionStatus } from "@/lib/leitorxml/types";
 import { marcarRevisado, pedirDeNovo } from "../actions";
@@ -11,11 +10,11 @@ import { enviarTarefaSharePoint } from "@/app/sharepoint/actions";
 export const metadata = { title: "Detalhe do pedido" };
 
 const TONE_CLASS: Record<string, string> = {
-  ok: "bg-emerald-50 text-emerald-700",
-  warn: "bg-amber-50 text-amber-700",
-  info: "bg-sky-50 text-sky-700",
-  danger: "bg-red-50 text-red-700",
-  neutral: "bg-black/5 text-black/60",
+  ok: "pill-ok",
+  warn: "pill-warn",
+  info: "pill-info",
+  danger: "pill-danger",
+  neutral: "",
 };
 
 function fmt(value: string | null) {
@@ -42,78 +41,82 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
 
   return (
     <Shell session={session}>
-      <Link href="/painel" className="text-sm text-black/50 hover:text-black">← Início</Link>
-      <div className="mt-2 flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-[#082240]">{establishment?.razao_social}</h1>
-          <p className="text-sm text-black/60">{establishment?.cnpj} · {documentLabel(task.tipo_documento)} · {roleLabel(task.papel)} · {competenciaLabel(task.competencia_ano, task.competencia_mes)}</p>
-        </div>
-        <span className={`rounded-full px-3 py-1 text-sm font-medium ${TONE_CLASS[statusTone(status)]}`}>{STATUS_LABELS[status]}</span>
+      <PageHeader
+        back={{ href: "/painel", label: "Início" }}
+        title={establishment?.razao_social}
+        subtitle={<span className="tabular">{establishment?.cnpj} · {documentLabel(task.tipo_documento)} · {roleLabel(task.papel)} · {competenciaLabel(task.competencia_ano, task.competencia_mes)}</span>}
+        actions={<span className={`pill h-[26px] px-3 text-[12px] ${TONE_CLASS[statusTone(status)]}`}><span className="dot" aria-hidden="true" />{STATUS_LABELS[status]}</span>}
+      />
+
+      <div className="flex flex-col gap-3">
+        {task.erro_mensagem && <p className="callout callout-danger">{task.erro_mensagem}</p>}
+
+        {canRequestAgain(task.status) && (
+          <form action={pedirDeNovoAction} className="callout callout-warn flex flex-wrap items-center gap-3">
+            <p className="min-w-[16rem] flex-1">Este pedido {task.status === "EXPIRADA" ? "venceu no Fisco Fácil (passou dos 7 dias)" : "não deu certo"}. Você pode devolvê-lo à fila: na próxima vez que a extensão pedir, ele será o primeiro.</p>
+            <button type="submit" className="btn">Pedir de novo</button>
+          </form>
+        )}
+
+        {task.baixado_at && (
+          <p className="callout callout-ok tabular">
+            ✓ Baixado em {fmt(task.baixado_at)}{task.baixado_por_nome ? ` por ${task.baixado_por_nome}` : ""}.
+          </p>
+        )}
+        {task.status === "DISPONIVEL_REVISAO" && (
+          <div className="callout flex flex-wrap items-center gap-3">
+            <p className="min-w-[16rem] flex-1 text-[var(--text-2)]">O ZIP está no portal e ainda não foi salvo em nenhum PC. A extensão salva sozinha com o Chrome aberto.</p>
+            <form action={revisarAction}>
+              <button type="submit" className="btn btn-secondary">Marcar como revisado</button>
+            </form>
+          </div>
+        )}
       </div>
 
-      {task.erro_mensagem && <p className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{task.erro_mensagem}</p>}
-
-      {canRequestAgain(task.status) && (
-        <form action={pedirDeNovoAction} className="mt-4 rounded border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm text-amber-900">Este pedido {task.status === "EXPIRADA" ? "venceu no Fisco Fácil (passou dos 7 dias)" : "não deu certo"}. Você pode devolvê-lo à fila: na próxima vez que a extensão pedir, ele será o primeiro.</p>
-          <button type="submit" className="mt-3 rounded bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Pedir de novo</button>
-        </form>
-      )}
-
-      {task.baixado_at && (
-        <p className="mt-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ✓ Baixado em {fmt(task.baixado_at)}{task.baixado_por_nome ? ` por ${task.baixado_por_nome}` : ""}.
-        </p>
-      )}
-      {task.status === "DISPONIVEL_REVISAO" && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="text-sm text-black/60">O ZIP está no portal e ainda não foi salvo em nenhum PC. A extensão salva sozinha com o Chrome aberto.</p>
-          <form action={revisarAction}>
-            <button type="submit" className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Marcar como revisado</button>
-          </form>
-        </div>
-      )}
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">Linha do tempo</h2>
-        <dl className="mt-3 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <dt className="text-black/50">Criado em</dt><dd>{fmt(task.created_at)}</dd>
-          <dt className="text-black/50">Última atualização</dt><dd>{fmt(task.updated_at)}</dd>
-          <dt className="text-black/50">Última verificação</dt><dd>{fmt(task.ultima_verificacao_at)}</dd>
-          <dt className="text-black/50">Tentativas</dt><dd>{task.tentativas}</dd>
-          <dt className="text-black/50">Referência no Fisco Fácil</dt><dd>{task.sefaz_referencia ?? "—"}</dd>
-          <dt className="text-black/50">Previsão de conclusão (SEFAZ)</dt><dd>{fmt(task.sefaz_previsao_conclusao)} <span className="text-xs text-black/40">(não confiável — ver handoff)</span></dd>
+      <section className="mt-7">
+        <h2 className="section-title">Linha do tempo</h2>
+        <dl className="card mt-3 grid grid-cols-[minmax(0,14rem)_1fr] gap-x-8 gap-y-2.5 px-5 py-4 text-[13px]">
+          <dt className="text-[var(--text-2)]">Criado em</dt><dd className="tabular">{fmt(task.created_at)}</dd>
+          <dt className="text-[var(--text-2)]">Última atualização</dt><dd className="tabular">{fmt(task.updated_at)}</dd>
+          <dt className="text-[var(--text-2)]">Última verificação</dt><dd className="tabular">{fmt(task.ultima_verificacao_at)}</dd>
+          <dt className="text-[var(--text-2)]">Tentativas</dt><dd className="tabular">{task.tentativas}</dd>
+          <dt className="text-[var(--text-2)]">Referência no Fisco Fácil</dt><dd className="tabular">{task.sefaz_referencia ?? "—"}</dd>
+          <dt className="text-[var(--text-2)]">Previsão de conclusão (SEFAZ)</dt><dd className="tabular">{fmt(task.sefaz_previsao_conclusao)} <span className="text-[12px] text-[var(--muted)]">(não confiável — ver handoff)</span></dd>
         </dl>
       </section>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">Arquivos</h2>
-          {task.storage_path_zip && <a href={`/pedidos/${id}/baixar`} className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Baixar ZIP</a>}
+      <section className="mt-7">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="section-title">Arquivos</h2>
+          {task.storage_path_zip && <a href={`/pedidos/${id}/baixar`} className="btn btn-secondary btn-sm">Baixar ZIP</a>}
         </div>
-        {!files?.length && <p className="mt-3 text-sm text-black/50">Nenhum arquivo recebido ainda.</p>}
+        {!files?.length && (
+          <div className="card mt-3">
+            <EmptyState title="Nenhum arquivo recebido ainda" text="O ZIP aparece aqui assim que a extensão baixar e validar o pedido." />
+          </div>
+        )}
         {!!files?.length && (
-          <div className="mt-3 overflow-x-auto rounded border border-black/10 bg-white">
-            <table className="w-full border-collapse text-sm">
+          <div className="table-wrap mt-3">
+            <table className="tbl">
               <thead>
-                <tr className="border-b border-black/10 bg-black/[0.03] text-left text-xs uppercase tracking-wide text-black/50">
-                  <th className="px-4 py-2">Recebido em</th>
-                  <th className="px-4 py-2">Documentos</th>
-                  <th className="px-4 py-2">Tamanho</th>
-                  <th className="px-4 py-2">Validação</th>
-                  <th className="px-4 py-2">Hash</th>
+                <tr>
+                  <th>Recebido em</th>
+                  <th className="text-right">Documentos</th>
+                  <th className="text-right">Tamanho</th>
+                  <th>Validação</th>
+                  <th>Hash</th>
                 </tr>
               </thead>
               <tbody>
                 {files.map((file) => (
-                  <tr key={file.id} className="border-b border-black/5 last:border-0">
-                    <td className="px-4 py-2">{fmt(file.created_at)}</td>
-                    <td className="px-4 py-2">{file.quantidade_documentos ?? "—"}</td>
-                    <td className="px-4 py-2">{(file.tamanho_bytes / 1024).toFixed(1)} KB</td>
-                    <td className="px-4 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${file.resultado_validacao === "OK" ? TONE_CLASS.ok : file.resultado_validacao === "QUARENTENA" ? TONE_CLASS.warn : TONE_CLASS.danger}`}>{file.resultado_validacao}</span>
+                  <tr key={file.id}>
+                    <td className="tabular">{fmt(file.created_at)}</td>
+                    <td className="num">{file.quantidade_documentos ?? "—"}</td>
+                    <td className="num">{(file.tamanho_bytes / 1024).toFixed(1)} KB</td>
+                    <td>
+                      <span className={`pill ${file.resultado_validacao === "OK" ? TONE_CLASS.ok : file.resultado_validacao === "QUARENTENA" ? TONE_CLASS.warn : TONE_CLASS.danger}`}>{file.resultado_validacao}</span>
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs text-black/50">{file.hash_sha256.slice(0, 12)}…</td>
+                    <td className="font-mono text-[12px] text-[var(--text-2)]">{file.hash_sha256.slice(0, 12)}…</td>
                   </tr>
                 ))}
               </tbody>
@@ -122,19 +125,21 @@ export default async function PedidoDetalhePage({ params }: { params: Promise<{ 
         )}
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-black/50">SharePoint</h2>
-        <p className="mt-3 text-sm text-black/60">
-          {task.sharepoint_path
-            ? task.sharepoint_path.startsWith("local:")
-              ? `Entregue na pasta do SharePoint (pelo computador): ${task.sharepoint_path.replace(/^local:\s*/, "")}`
-              : task.sharepoint_path
-            : "Ainda não entregue na pasta do SharePoint. A extensão salva o arquivo assim que um computador configurado estiver com o Chrome aberto."}
-        </p>
-        {task.storage_path_zip && !task.sharepoint_item_id && (
-          <form action={enviarAction} className="mt-3"><button type="submit" className="rounded border border-black/15 px-3 py-1 text-sm font-medium text-[#082240] hover:bg-black/[0.03]">Enviar ao SharePoint agora</button></form>
-        )}
-        {establishment?.sharepoint_folder_path && <p className="mt-1 text-xs text-black/40">Pasta cadastrada para esta empresa: {establishment.sharepoint_folder_path}</p>}
+      <section className="mt-7">
+        <h2 className="section-title">SharePoint</h2>
+        <div className="card mt-3 px-5 py-4">
+          <p className="text-[13px] text-[var(--ink)]">
+            {task.sharepoint_path
+              ? task.sharepoint_path.startsWith("local:")
+                ? `Entregue na pasta do SharePoint (pelo computador): ${task.sharepoint_path.replace(/^local:\s*/, "")}`
+                : task.sharepoint_path
+              : "Ainda não entregue na pasta do SharePoint. A extensão salva o arquivo assim que um computador configurado estiver com o Chrome aberto."}
+          </p>
+          {establishment?.sharepoint_folder_path && <p className="help mt-1">Pasta cadastrada para esta empresa: {establishment.sharepoint_folder_path}</p>}
+          {task.storage_path_zip && !task.sharepoint_item_id && (
+            <form action={enviarAction} className="mt-3"><button type="submit" className="btn btn-secondary btn-sm">Enviar ao SharePoint agora</button></form>
+          )}
+        </div>
       </section>
     </Shell>
   );

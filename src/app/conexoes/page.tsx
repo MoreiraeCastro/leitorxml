@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
-import { Shell } from "@/components/shell";
+import { PageHeader, Shell } from "@/components/shell";
 import { ExtensaoSection } from "./extensao-section";
 import { SharePointSection } from "./sharepoint-section";
 
@@ -19,21 +19,22 @@ export default async function ConexoesPage({ searchParams }: { searchParams: Pro
 
   return (
     <Shell session={session}>
-      <h1 className="text-xl font-semibold text-[#082240]">Conexões</h1>
-      <div className="mt-4 flex gap-1 border-b border-black/10" role="tablist">
+      <PageHeader title="Conexões" subtitle="Como a extensão do Chrome e o SharePoint se ligam ao Leitor de XML." />
+      <div className="tabs -mt-2" role="tablist">
         {TABS.map((tab) => (
           <Link
             key={tab.key}
             href={`/conexoes?aba=${tab.key}`}
             role="tab"
             aria-selected={tab.key === current}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab.key === current ? "border-[#082240] font-medium text-[#082240]" : "border-transparent text-black/50 hover:text-black"}`}
+            title={tab.hint}
+            className="tab"
           >
             {tab.label}
           </Link>
         ))}
       </div>
-      <div className="mt-5">{current === "sharepoint" ? <SharePointSection /> : <ExtensaoSection />}</div>
+      <div className="mt-6">{current === "sharepoint" ? <SharePointSection /> : <ExtensaoSection />}</div>
     </Shell>
   );
 }

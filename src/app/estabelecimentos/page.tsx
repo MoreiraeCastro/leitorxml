@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Shell } from "@/components/shell";
+import { EmptyState, PageHeader, Shell } from "@/components/shell";
 
 export const metadata = { title: "Empresas" };
 
@@ -14,36 +14,45 @@ export default async function EstabelecimentosPage() {
 
   return (
     <Shell session={session}>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[#082240]">Empresas</h1>
-        <Link href="/estabelecimentos/novo" className="rounded bg-[#082240] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#123a5d]">Nova empresa</Link>
-      </div>
+      <PageHeader
+        title="Empresas"
+        subtitle="Estabelecimentos acompanhados na coleta mensal de XML."
+        actions={<Link href="/estabelecimentos/novo" className="btn">Nova empresa</Link>}
+      />
 
-      {error && <p className="mt-4 text-sm text-red-700">Não foi possível carregar os estabelecimentos.</p>}
-      {!error && !establishments?.length && <p className="mt-8 text-sm text-black/60">Nenhuma empresa cadastrada ainda.</p>}
+      {error && <p role="alert" className="callout callout-danger">Não foi possível carregar os estabelecimentos.</p>}
+      {!error && !establishments?.length && (
+        <div className="card">
+          <EmptyState
+            title="Nenhuma empresa cadastrada ainda"
+            text="Cadastre a primeira empresa para que ela entre na rotina mensal."
+            action={<Link href="/estabelecimentos/novo" className="btn">Nova empresa</Link>}
+          />
+        </div>
+      )}
 
       {!!establishments?.length && (
-        <div className="mt-6 overflow-x-auto rounded border border-black/10 bg-white">
-          <table className="w-full border-collapse text-sm">
+        <div className="table-wrap">
+          <table className="tbl">
             <thead>
-              <tr className="border-b border-black/10 bg-black/[0.03] text-left text-xs uppercase tracking-wide text-black/50">
-                <th className="px-4 py-2">Razão social</th>
-                <th className="px-4 py-2">CNPJ</th>
-                <th className="px-4 py-2">Certificado</th>
-                <th className="px-4 py-2">Situação cadastral</th>
-                <th className="px-4 py-2">Ativo</th>
+              <tr>
+                <th>Razão social</th>
+                <th>CNPJ</th>
+                <th>Certificado</th>
+                <th>Situação cadastral</th>
+                <th>Ativo</th>
               </tr>
             </thead>
             <tbody>
               {establishments.map((establishment) => (
-                <tr key={establishment.id} className="border-b border-black/5 last:border-0">
-                  <td className="px-4 py-2">
-                    <Link href={`/estabelecimentos/${establishment.id}`} className="font-medium text-[#082240] hover:underline">{establishment.razao_social}</Link>
+                <tr key={establishment.id}>
+                  <td>
+                    <Link href={`/estabelecimentos/${establishment.id}`} className="cell-title">{establishment.razao_social}</Link>
                   </td>
-                  <td className="px-4 py-2 text-black/70">{establishment.cnpj}</td>
-                  <td className="px-4 py-2 text-black/70">{establishment.certificado_tipo === "ESCRITORIO_PROCURACAO" ? "Escritório (procuração)" : "Próprio"}</td>
-                  <td className="px-4 py-2 text-black/70">{establishment.situacao_cadastral ?? "—"}</td>
-                  <td className="px-4 py-2">{establishment.ativo ? "Sim" : "Não"}</td>
+                  <td className="muted tabular">{establishment.cnpj}</td>
+                  <td className="muted">{establishment.certificado_tipo === "ESCRITORIO_PROCURACAO" ? "Escritório (procuração)" : "Próprio"}</td>
+                  <td className="muted">{establishment.situacao_cadastral ?? "—"}</td>
+                  <td>{establishment.ativo ? <span className="pill pill-ok">Sim</span> : <span className="pill">Não</span>}</td>
                 </tr>
               ))}
             </tbody>

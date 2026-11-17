@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Shell } from "@/components/shell";
+import { PageHeader, Shell } from "@/components/shell";
 import { EstablishmentForm } from "@/components/establishment-form";
 import { atualizarEstabelecimento } from "../actions";
 
@@ -19,7 +19,7 @@ export default async function EditarEstabelecimentoPage({ params }: { params: Pr
 
   return (
     <Shell session={session}>
-      <h1 className="text-lg font-semibold text-[#082240]">{establishment.razao_social}</h1>
+      <PageHeader back={{ href: "/estabelecimentos", label: "Empresas" }} title={establishment.razao_social} subtitle={<span className="tabular">CNPJ {establishment.cnpj}</span>} />
       <EstablishmentForm
         action={atualizarEstabelecimento.bind(null, id)}
         showAtivo

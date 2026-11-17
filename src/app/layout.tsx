@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+// Mesma fonte do portal, auto-hospedada no build (a CSP segue com font-src 'self').
+const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: { default: "Leitor de XML", template: "%s | Leitor de XML" },
@@ -7,5 +11,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR"><body className="font-sans antialiased">{children}</body></html>;
+  return <html lang="pt-BR" className={inter.variable}><body className="antialiased">{children}</body></html>;
 }

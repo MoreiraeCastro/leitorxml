@@ -1,5 +1,5 @@
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
-import { Shell } from "@/components/shell";
+import { PageHeader, Shell } from "@/components/shell";
 import { EstablishmentForm } from "@/components/establishment-form";
 import { criarEstabelecimento } from "../actions";
 
@@ -9,7 +9,7 @@ export default async function NovoEstabelecimentoPage() {
   const session = await requireOfficeSessionOrRedirect();
   return (
     <Shell session={session}>
-      <h1 className="text-lg font-semibold text-[#082240]">Novo estabelecimento</h1>
+      <PageHeader back={{ href: "/estabelecimentos", label: "Empresas" }} title="Novo estabelecimento" subtitle="Dados da empresa e do certificado usado na coleta." />
       <EstablishmentForm action={criarEstabelecimento} />
     </Shell>
   );

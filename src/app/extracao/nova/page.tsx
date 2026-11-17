@@ -1,6 +1,7 @@
 import { requireOfficeSessionOrRedirect } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Shell } from "@/components/shell";
+import Link from "next/link";
+import { EmptyState, PageHeader, Shell } from "@/components/shell";
 import { previousClosedCompetencia } from "@/lib/leitorxml/tasks";
 import { dispararExtracao } from "../actions";
 
@@ -16,42 +17,53 @@ export default async function NovaExtracaoPage() {
 
   return (
     <Shell session={session}>
-      <h1 className="text-lg font-semibold text-[#082240]">Nova extração</h1>
-      <p className="mt-1 text-sm text-black/60">Escolha as empresas e o mês. Cada uma ganha as 3 tarefas. Inativas e baixadas são ignoradas.</p>
+      <PageHeader
+        back={{ href: "/painel", label: "Início" }}
+        title="Nova extração"
+        subtitle="Escolha as empresas e o mês. Cada uma ganha as 3 tarefas. Inativas e baixadas são ignoradas."
+      />
 
-      {error && <p className="mt-4 text-sm text-red-700">Não foi possível carregar os estabelecimentos.</p>}
+      {error && <p role="alert" className="callout callout-danger">Não foi possível carregar os estabelecimentos.</p>}
 
       {!error && (
-        <form action={dispararExtracao} className="mt-6 flex flex-col gap-6">
+        <form action={dispararExtracao} className="flex flex-col gap-6">
           <div className="flex items-end gap-4">
-            <div className="flex flex-col gap-1">
-              <label htmlFor="competenciaAno" className="text-sm font-medium text-black/80">Ano</label>
-              <input id="competenciaAno" name="competenciaAno" type="number" required defaultValue={fallback.competenciaAno} className="w-24 rounded border border-black/15 px-3 py-2 text-sm" />
+            <div className="field">
+              <label htmlFor="competenciaAno" className="label">Ano</label>
+              <input id="competenciaAno" name="competenciaAno" type="number" required defaultValue={fallback.competenciaAno} className="input tabular w-24" />
             </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="competenciaMes" className="text-sm font-medium text-black/80">Mês</label>
-              <input id="competenciaMes" name="competenciaMes" type="number" min={1} max={12} required defaultValue={fallback.competenciaMes} className="w-20 rounded border border-black/15 px-3 py-2 text-sm" />
+            <div className="field">
+              <label htmlFor="competenciaMes" className="label">Mês</label>
+              <input id="competenciaMes" name="competenciaMes" type="number" min={1} max={12} required defaultValue={fallback.competenciaMes} className="input tabular w-20" />
             </div>
           </div>
 
-          <div className="rounded border border-black/10 bg-white">
-            <div className="border-b border-black/10 bg-black/[0.03] px-4 py-2 text-xs uppercase tracking-wide text-black/50">Estabelecimentos</div>
-            <div className="max-h-96 divide-y divide-black/5 overflow-y-auto">
+          <div className="table-wrap">
+            <div className="border-b border-[var(--line)] bg-[var(--table-head)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[.05em] text-[var(--muted)]">Estabelecimentos</div>
+            <div className="max-h-96 divide-y divide-[var(--line)] overflow-y-auto">
               {(establishments ?? []).map((establishment) => {
                 const excluded = !establishment.ativo || establishment.situacao_cadastral === "Baixada";
                 return (
-                  <label key={establishment.id} className={`flex items-center gap-3 px-4 py-2 text-sm ${excluded ? "text-black/30" : ""}`}>
+                  <label key={establishment.id} className={`check px-4 py-2.5 transition-colors ${excluded ? "text-[var(--muted)] opacity-70" : "cursor-pointer hover:bg-[var(--table-head)]"}`}>
                     <input type="checkbox" name="establishmentIds" value={establishment.id} disabled={excluded} defaultChecked={!excluded} />
-                    <span className="flex-1">{establishment.razao_social} <span className="text-black/50">— {establishment.cnpj}</span></span>
-                    {excluded && <span className="text-xs">{establishment.situacao_cadastral === "Baixada" ? "Baixada" : "Inativo"}</span>}
+                    <span className="flex-1">{establishment.razao_social} <span className="tabular text-[var(--text-2)]">— {establishment.cnpj}</span></span>
+                    {excluded && <span className="pill">{establishment.situacao_cadastral === "Baixada" ? "Baixada" : "Inativo"}</span>}
                   </label>
                 );
               })}
-              {!establishments?.length && <p className="px-4 py-6 text-sm text-black/50">Nenhum estabelecimento cadastrado — cadastre um primeiro.</p>}
+              {!establishments?.length && (
+                <EmptyState
+                  title="Nenhum estabelecimento cadastrado"
+                  text="Cadastre uma empresa primeiro para poder criar as tarefas."
+                  action={<Link href="/estabelecimentos/novo" className="btn btn-secondary">Nova empresa</Link>}
+                />
+              )}
             </div>
           </div>
 
-          <button type="submit" className="w-fit rounded bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d]">Criar tarefas</button>
+          <div className="flex justify-end">
+            <button type="submit" className="btn">Criar tarefas</button>
+          </div>
         </form>
       )}
     </Shell>

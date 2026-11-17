@@ -53,32 +53,32 @@ export function ExtensionPairing() {
     }
   }
 
-  const box = "rounded border p-4 text-sm";
+  const box = "callout px-5 py-4";
   if (estado === "conectada") {
     return (
-      <div className={`${box} border-emerald-200 bg-emerald-50 text-emerald-800`}>
+      <div className={`${box} callout-ok`}>
         <p className="font-semibold">Extensão conectada neste Chrome.</p>
         <p className="mt-1">Pode fechar esta página. Não precisa copiar nada. Se trocar de computador ou de Chrome, volte aqui e conecte de novo.</p>
-        <button type="button" onClick={conectar} className="mt-3 rounded border border-emerald-300 px-3 py-1 text-xs hover:bg-emerald-100">Reconectar (gera uma conexão nova)</button>
+        <button type="button" onClick={conectar} className="btn btn-secondary btn-sm mt-3">Reconectar (gera uma conexão nova)</button>
       </div>
     );
   }
   if (estado === "nao-detectada") {
     return (
-      <div className={`${box} border-amber-200 bg-amber-50 text-amber-900`}>
+      <div className={`${box} callout-warn`}>
         <p className="font-semibold">Extensão não detectada neste Chrome.</p>
         <p className="mt-1">Confira se a extensão “Leitor de XML” está instalada e ligada em <code>chrome://extensions</code>, depois recarregue esta página.</p>
       </div>
     );
   }
   return (
-    <div className={`${box} border-black/10 bg-white`}>
-      <p className="font-semibold text-[#082240]">Conectar a extensão a este portal</p>
-      <p className="mt-1 text-black/60">Um clique. A conexão vai sozinha para a extensão, sem copiar nem colar nada.</p>
-      <button type="button" onClick={conectar} disabled={estado === "verificando" || estado === "conectando"} className="mt-3 rounded bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:bg-[#123a5d] disabled:opacity-50">
+    <div className={box}>
+      <p className="block-title">Conectar a extensão a este portal</p>
+      <p className="mt-1 text-[var(--text-2)]">Um clique. A conexão vai sozinha para a extensão, sem copiar nem colar nada.</p>
+      <button type="button" onClick={conectar} disabled={estado === "verificando" || estado === "conectando"} className="btn mt-3">
         {estado === "conectando" ? "Conectando…" : estado === "verificando" ? "Procurando a extensão…" : "Conectar esta extensão"}
       </button>
-      {(estado === "erro" || mensagem) && <p className="mt-3 text-red-700">{mensagem ?? "A extensão não respondeu. Recarregue a página e tente de novo."}</p>}
+      {(estado === "erro" || mensagem) && <p className="mt-3 text-[var(--danger)]">{mensagem ?? "A extensão não respondeu. Recarregue a página e tente de novo."}</p>}
     </div>
   );
 }

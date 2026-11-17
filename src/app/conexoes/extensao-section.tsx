@@ -16,43 +16,45 @@ export async function ExtensaoSection() {
 
   return (
     <div className="space-y-4">
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white px-5 py-4">
+      <section className="card flex flex-wrap items-center justify-between gap-4 px-5 py-4">
         <div>
-          <h2 className="font-medium text-[#082240]">Instalar em outro computador</h2>
+          <h2 className="block-title">Instalar em outro computador</h2>
           {/* Sem a opção do ZIP solto: ele não traz o atualizador, e o PC ficaria sem atualização automática. */}
-          <p className="text-sm text-black/60">Baixe o instalador, abra e siga a janela. Passo a passo em <Link href="/ajuda" className="underline">Ajuda → Instalar a extensão</Link>.</p>
-          <p className="text-xs text-black/50">Depois de instalar, feche o Chrome por completo e abra de novo. Daí em diante a extensão se atualiza sozinha.</p>
+          <p className="mt-1 text-[13px] text-[var(--text-2)]">Baixe o instalador, abra e siga a janela. Passo a passo em <Link href="/ajuda" className="link">Ajuda → Instalar a extensão</Link>.</p>
+          <p className="help mt-0.5">Depois de instalar, feche o Chrome por completo e abra de novo. Daí em diante a extensão se atualiza sozinha.</p>
         </div>
-        <a href={withBasePath("/api/leitorxml/extensao/instalador")} className="rounded-lg bg-[#082240] px-4 py-2 text-sm font-medium text-white hover:opacity-90">Baixar o instalador</a>
+        <a href={withBasePath("/api/leitorxml/extensao/instalador")} className="btn">Baixar o instalador</a>
       </section>
 
       <ExtensionPairing />
 
-      <details className="rounded-xl border border-black/10 bg-white">
-        <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-[#082240]">Conexões ativas ({active.length})</summary>
-        <div className="overflow-x-auto px-5 pb-4">
-          <table className="w-full border-collapse text-sm">
+      <details className="card disclosure">
+        <summary>
+          <span className="flex items-center gap-2">Conexões ativas <span className="pill tabular">{active.length}</span></span>
+        </summary>
+        <div className="overflow-x-auto border-t border-[var(--line)]">
+          <table className="tbl">
             <thead>
-              <tr className="border-b border-black/10 text-left text-xs text-black/50">
-                <th className="py-2 pr-4 font-medium">Nome</th>
-                <th className="py-2 pr-4 font-medium">Criada</th>
-                <th className="py-2 pr-4 font-medium">Versão</th>
-                <th className="py-2 pr-4 font-medium">Último uso</th>
-                <th className="py-2" />
+              <tr>
+                <th>Nome</th>
+                <th>Criada</th>
+                <th>Versão</th>
+                <th>Último uso</th>
+                <th><span className="sr-only">Ações</span></th>
               </tr>
             </thead>
             <tbody>
-              {!active.length && <tr><td colSpan={5} className="py-4 text-black/50">Nenhuma conexão ativa.</td></tr>}
+              {!active.length && <tr className="no-hover"><td colSpan={5} className="py-6 text-center text-[var(--text-2)]">Nenhuma conexão ativa.</td></tr>}
               {active.map((row) => (
-                <tr key={row.id} className="border-b border-black/5 last:border-0">
-                  <td className="py-2 pr-4">{row.label ?? "Token manual"}</td>
-                  <td className="py-2 pr-4 text-black/60">{fmt(row.created_at)}</td>
-                  <td className="py-2 pr-4 text-black/60">{row.ultima_versao ?? "—"}</td>
-                  <td className="py-2 pr-4 text-black/60">{fmt(row.last_used_at)}</td>
-                  <td className="py-2 text-right">
+                <tr key={row.id}>
+                  <td className="cell-title">{row.label ?? "Token manual"}</td>
+                  <td className="muted tabular">{fmt(row.created_at)}</td>
+                  <td className="muted tabular">{row.ultima_versao ?? "—"}</td>
+                  <td className="muted tabular">{fmt(row.last_used_at)}</td>
+                  <td className="actions">
                     <form action={revogarToken}>
                       <input type="hidden" name="id" value={row.id} />
-                      <button type="submit" className="text-xs text-red-700 hover:underline">Revogar</button>
+                      <button type="submit" className="link-danger">Revogar</button>
                     </form>
                   </td>
                 </tr>
@@ -62,10 +64,10 @@ export async function ExtensaoSection() {
         </div>
       </details>
 
-      <details className="rounded-xl border border-black/10 bg-white">
-        <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-[#082240]">Avançado: gerar token manual</summary>
-        <div className="px-5 pb-4">
-          <p className="mb-3 text-sm text-black/60">Só para outros usos da API. Aparece uma única vez.</p>
+      <details className="card disclosure">
+        <summary>Avançado: gerar token manual</summary>
+        <div className="disclosure-body">
+          <p className="mb-3 text-[13px] text-[var(--text-2)]">Só para outros usos da API. Aparece uma única vez.</p>
           <ExtensionTokenGenerator />
         </div>
       </details>
